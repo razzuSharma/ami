@@ -1,50 +1,53 @@
-# Welcome to your Expo app 👋
+# 🌙 AMI — Your AI Companion
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+AMI is a beautifully designed AI companion app built with **Expo + React Native**.  
+It focuses on calm, human-centric interactions through chat and journaling — inspired by modern apps like Instagram, Messenger, and mental-wellbeing tools.
 
-## Get started
+The goal of AMI is simple:  
+**a safe space to talk, reflect, and feel heard.**
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## ✨ Features
 
-2. Start the app
+- 💬 **Immersive Chat Experience**
+  - Smooth keyboard handling
+  - Auto-scrolling messages
+  - Modern glassmorphism UI
+  - AI typing & reply simulation
 
-   ```bash
-   npx expo start
-   ```
+- 📓 **Journal Mode**
+  - Write and reflect in a distraction-free space
+  - Calm, minimal design for daily thoughts
 
-In the output, you'll find options to open the app in a
+- 🎨 **Modern UI / UX**
+  - Gradient backgrounds
+  - Soft shadows & rounded components
+  - Tailwind-style styling (NativeWind)
+  - Inspired by Instagram & Facebook chat polish
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- 📱 **Cross-Platform**
+  - Android
+  - iOS
+  - Expo Go support
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+---
 
-## Get a fresh project
+## 🛠 Tech Stack
 
-When you're ready, run:
+- **Expo**
+- **React Native**
+- **Expo Router** (file-based routing)
+- **NativeWind (Tailwind for React Native)**
+- **expo-linear-gradient**
+- **@expo/vector-icons**
+- **react-native-safe-area-context**
+
+---
+
+## 🚀 Getting Started
+
+### 1. Install dependencies
 
 ```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+npm install
