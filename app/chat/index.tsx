@@ -1,126 +1,135 @@
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   Text,
   TextInput,
-  TouchableOpacity,
-  View,
+  View
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import ChatBubble from "../../components/ChatBubble";
-import TypingIndicator from "../../components/TypingIndicator";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+type Message = {
+  id: string;
+  text: string;
+  user: "bot" | "user";
+};
 
 export default function ChatScreen() {
-  const [messages, setMessages] = useState([
-    { id: "1", text: "Hi! I’m here for you 😊", user: "bot" },
-  ]);
+  const insets = useSafeAreaInsets();
+  const flatListRef = useRef<FlatList<Message>>(null);
   const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
+  
+  const initialMessages = useMemo<Message[]>(() => [
+    { id: "1", text: "Good evening! 🌙\nHow are you feeling?", user: "bot" },
+    { id: "2", text: "Honestly, a bit drained. It was intense.", user: "user" },
+    { id: "3", text: "I understand. Take a deep breath. 🌿", user: "bot" },
+  ], []);
 
-  // Auto-scroll to bottom
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
+
   useEffect(() => {
-    flatListRef.current?.scrollToEnd({ animated: true });
-  }, [messages, isTyping]);
+    const timer = setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [messages]);
 
-  // Send message function
   const sendMessage = () => {
     if (!input.trim()) return;
-
-    const userMessage = {
-      id: Date.now().toString(),
-      text: input,
-      user: "user",
-    };
+    const userMessage: Message = { id: Date.now().toString(), text: input.trim(), user: "user" };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
-    setIsTyping(true);
-
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          text: "That’s interesting! 😄",
-          user: "bot",
-        },
-      ]);
-      setIsTyping(false);
-    }, 1200);
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-900">
-      {/* Sticky header */}
-      <LinearGradient
-        colors={["#1f2937", "#111827"]}
-        className="px-4 py-3 flex-row items-center border-b border-gray-700"
-      >
-        <View className="w-10 h-10 bg-blue-500 rounded-full mr-3" />
-        <View>
-          <Text className="text-white font-semibold text-lg">Companion</Text>
-          <Text className="text-gray-400 text-sm">Active now</Text>
-          
-        </View>
-      </LinearGradient>
-
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-      >
-        {/* Chat card */}
-        <LinearGradient
-          colors={["rgba(30,30,30,0.8)", "rgba(45,45,45,0.8)"]}
-          className="flex-1 m-4 rounded-3xl p-4 shadow-2xl overflow-hidden"
-        >
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <ChatBubble message={item} />}
-            contentContainerStyle={{ paddingBottom: 120 }}
-            showsVerticalScrollIndicator={false}
+    <LinearGradient colors={["#130820", "#0a0714", "#08060f"]} className="flex-1">
+  <View style={{ flex: 1, paddingTop: insets.top }}>
+    
+    {/* Header */}
+    <View className="px-4 pt-2 pb-4 flex-row items-center justify-between">
+      <Pressable className="w-10 h-10 rounded-full border border-white/20 bg-white/10 items-center justify-center">
+        <Ionicons name="chevron-back" size={22} color="#f5f3ff" />
+      </Pressable>
+      <View className="flex-1 flex-row items-center ml-3">
+        <View className="w-12 h-12 rounded-full overflow-hidden bg-purple-800/60 border border-white/10">
+          <Image
+            source={require("../../assets/images/image-ami.png")}
+            className="w-full h-full"
+            resizeMode="cover"
           />
-
-          {isTyping && (
-            <View className="px-2 pb-2">
-              <TypingIndicator />
-            </View>
-          )}
-        </LinearGradient>
-
-        {/* Input bar */}
-        <View className="absolute bottom-4 left-4 right-4 flex-row items-center bg-gray-800/90 border border-gray-700 rounded-3xl px-4 py-2 shadow-lg">
-          {/* Emoji */}
-          <TouchableOpacity
-            onPress={() => setInput((prev) => prev + "😊")}
-            className="mr-2"
-          >
-            <Text className="text-xl">😊</Text>
-          </TouchableOpacity>
-
-          {/* Text input */}
-          <TextInput
-            className="flex-1 bg-gray-700 rounded-2xl px-4 py-2 text-white text-base mr-3"
-            placeholder="Say something..."
-            placeholderTextColor="#9ca3af"
-            value={input}
-            onChangeText={setInput}
-          />
-
-          {/* Send button */}
-          <TouchableOpacity
-            className="bg-blue-500 px-4 py-2 rounded-2xl justify-center items-center shadow-md"
-            onPress={sendMessage}
-          >
-            <Text className="text-white font-semibold text-base">Send</Text>
-          </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        <View className="ml-3">
+          <Text className="text-white text-xl font-semibold">Companion</Text>
+          <View className="flex-row items-center">
+            <View className="w-2 h-2 rounded-full bg-green-400 mr-2" />
+            <Text className="text-purple-200 text-xs">Online</Text>
+          </View>
+        </View>
+      </View>
+    </View>
+
+    {/* Keyboard Avoiding Container */}
+    <KeyboardAvoidingView
+      className="flex-1"
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 50 : 0}
+    >
+      <View className="flex-1 justify-end">
+        {/* Messages */}
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => {
+            const isUser = item.user === "user";
+            return (
+              <View className={`mb-3 ${isUser ? "self-end" : "self-start"}`}>
+                <View className={`px-5 py-4 max-w-[85%] rounded-[28px] ${isUser ? "bg-purple-600 rounded-br-sm" : "bg-white/10 rounded-bl-sm"}`}>
+                  <Text className="text-white text-lg leading-7">{item.text}</Text>
+                </View>
+              </View>
+            );
+          }}
+          contentContainerStyle={{ paddingHorizontal: 16, flexGrow: 1, justifyContent: "flex-end" }}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        />
+
+        {/* Input Bar */}
+        <View style={{ paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom, 8), marginTop: 6 }}>
+          <View
+            className="flex-row items-center rounded-full px-4 py-1.5"
+            style={{
+              backgroundColor: "rgba(255,255,255,0.08)",
+              borderWidth: 1,
+              borderColor: "rgba(255,255,255,0.15)",
+            }}
+          >
+            <TextInput
+              className="flex-1 text-white text-base px-2 min-h-[45px]"
+              placeholder="I think I just need to..."
+              placeholderTextColor="#c4b5fd"
+              value={input}
+              onChangeText={setInput}
+              onSubmitEditing={sendMessage}
+              multiline={false}
+            />
+            <Pressable onPress={sendMessage} className="ml-2 w-10 h-10 rounded-full overflow-hidden">
+              <LinearGradient colors={["#d946ef", "#a855f7"]} className="w-full h-full items-center justify-center">
+                <Ionicons name="arrow-up" size={22} color="white" />
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </KeyboardAvoidingView>
+  </View>
+</LinearGradient>
   );
 }
