@@ -109,6 +109,34 @@ export default function TabsLayout() {
             );
           }
 
+          if (route.name === "profile") {
+            return (
+              <View
+                style={{
+                  alignItems: "center",
+                  transform: [{ translateY: focused ? -2 : 0 }],
+                }}
+              >
+                <Ionicons
+                  name={focused ? "person-outline" : "person-outline"}
+                  size={focused ? 26 : 24}
+                  color={color}
+                />
+                {focused && (
+                  <View
+                    style={{
+                      marginTop: 4,
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: Colors.accent,
+                    }}
+                  />
+                )}
+              </View>
+            );
+          }
+
           return null;
         },
 
