@@ -20,7 +20,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "softwareKeyboardLayoutMode": "adjustPan"
+      "softwareKeyboardLayoutMode": "adjustResize"
     },
     "web": {
       "output": "static",
