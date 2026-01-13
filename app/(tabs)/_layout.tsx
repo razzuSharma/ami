@@ -81,7 +81,7 @@ export default function TabsLayout() {
             );
           }
 
-          if (route.name === "explore") {
+          if (route.name === "checkins") {
             return (
               <View
                 style={{
@@ -90,7 +90,7 @@ export default function TabsLayout() {
                 }}
               >
                 <MaterialIcons
-                  name={focused ? "explore" : "explore"}
+                  name={focused ? "check-circle" : "check-circle"}
                   size={focused ? 26 : 24}
                   color={color}
                 />
@@ -144,7 +144,7 @@ export default function TabsLayout() {
       })}
     >
       <Tabs.Screen name="index" options={{ title: "Home" }} />
-      <Tabs.Screen name="explore" options={{ title: "Explore" }} />
+      <Tabs.Screen name="checkins" options={{ title: "Checkins" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile" }} />
     </Tabs>
   );
