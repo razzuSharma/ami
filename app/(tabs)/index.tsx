@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import { useEffect } from "react";
 import {
   Image,
   ScrollView,
@@ -9,9 +10,23 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { scheduleDailyReminder } from "../../helper/notifications";
 
 export default function HomeScreen() {
   const router = useRouter();
+
+  useEffect(() => {
+    // Schedule notification in background to avoid blocking app render
+    const scheduleNotification = async () => {
+      try {
+        await scheduleDailyReminder();
+      } catch (error) {
+        console.warn("Failed to schedule daily reminder:", error);
+      }
+    };
+
+    scheduleNotification();
+  }, []);
 
   return (
     <View style={styles.container}>
