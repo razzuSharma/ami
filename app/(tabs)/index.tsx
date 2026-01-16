@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import {
@@ -46,20 +45,6 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Ambient Background Gradients */}
-      <LinearGradient
-        colors={["#ba30e8", "#3b82f6", "#f97316"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradientA}
-      />
-      <LinearGradient
-        colors={["#60a5fa", "#f97316"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradientB}
-      />
-
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
         {/* Top App Bar */}
         <View style={styles.topBar}>
@@ -142,21 +127,6 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
-
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNavContainer}>
-        <View style={styles.bottomNav}>
-          <TouchableOpacity style={styles.navButton}>
-            <Ionicons name="home-outline" size={26} color="#ba30e8" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navButton}>
-            <Ionicons name="time-outline" size={26} color="#ffffff" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navButton}>
-            <Ionicons name="bar-chart-outline" size={26} color="#ffffff" />
-          </TouchableOpacity>
-        </View>
-      </View>
     </View>
   );
 }
@@ -165,24 +135,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0b1021",
-  },
-  gradientA: {
-    position: "absolute",
-    width: 384,
-    height: 384,
-    borderRadius: 192,
-    top: -100,
-    left: -100,
-    opacity: 0.2,
-  },
-  gradientB: {
-    position: "absolute",
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    bottom: -80,
-    right: -80,
-    opacity: 0.2,
   },
   topBar: {
     flexDirection: "row",
@@ -332,33 +284,5 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.8)",
     fontSize: 14,
     lineHeight: 20,
-  },
-  bottomNavContainer: {
-    position: "absolute",
-    bottom: 24,
-    left: 0,
-    width: "100%",
-    paddingHorizontal: 24,
-    justifyContent: "center",
-    zIndex: 50,
-  },
-  bottomNav: {
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 12,
-  },
-  navButton: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

@@ -2,145 +2,132 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Tabs } from "expo-router";
 import { View } from "react-native";
-import { Colors } from "../../constants/colors";
+
+type TabName = "index" | "checkins" | "profile";
+
+const TAB_CONFIG: Record<
+  TabName,
+  {
+    color: string;
+    icon: "ion" | "material";
+    activeIcon: string;
+    inactiveIcon?: string;
+  }
+> = {
+  index: {
+    color: "#8B5CF6",
+    icon: "ion",
+    activeIcon: "home",
+    inactiveIcon: "home-outline",
+  },
+  checkins: {
+    color: "#22C55E",
+    icon: "material",
+    activeIcon: "check-circle",
+  },
+  profile: {
+    color: "#3B82F6",
+    icon: "ion",
+    activeIcon: "person",
+    inactiveIcon: "person-outline",
+  },
+};
+
+interface TabIconProps {
+  routeName: TabName;
+  focused: boolean;
+}
+
+function TabIcon({ routeName, focused }: TabIconProps) {
+  const config = TAB_CONFIG[routeName] || TAB_CONFIG.index; // Fallback to index if undefined
+  const { color, icon, activeIcon, inactiveIcon } = config;
+
+  const IconComponent = icon === "material" ? MaterialIcons : Ionicons;
+  const iconName = focused || !inactiveIcon ? activeIcon : inactiveIcon;
+
+  return (
+    <View style={{ alignItems: "center", justifyContent: "center" }}>
+      {/* Soft white glow */}
+      {focused && (
+        <View
+          style={{
+            position: "absolute",
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: "rgba(255,255,255,0.08)",
+          }}
+        />
+      )}
+
+      {/* Icon */}
+      <View
+        style={{
+          transform: [
+            { translateY: focused ? -2 : 0 },
+            { scale: focused ? 1.08 : 1 },
+          ],
+        }}
+      >
+        <IconComponent
+          name={iconName as any}
+          size={26}
+          color={focused ? "#FFFFFF" : "rgba(255,255,255,0.5)"}
+        />
+      </View>
+
+      {/* Minimal indicator */}
+      {focused && (
+        <View
+          style={{
+            marginTop: 6,
+            width: 16,
+            height: 3,
+            borderRadius: 2,
+            backgroundColor: color,
+          }}
+        />
+      )}
+    </View>
+  );
+}
 
 export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={({ route }) => ({
         headerShown: false,
+        tabBarShowLabel: false,
 
         tabBarStyle: {
           position: "absolute",
-          bottom: 16,
-          left: 16,
-          right: 16,
-          height: 52,
-          borderRadius: 20,
+          bottom: 18,
+          left: 18,
+          right: 18,
+          height: 64,
+          borderRadius: 32,
           backgroundColor: "transparent",
           borderTopWidth: 0,
-
-          // shadow
-          elevation: 10,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 10 },
-          shadowOpacity: 0.15,
-          shadowRadius: 20,
+          elevation: 16,
         },
 
         tabBarBackground: () => (
-          <LinearGradient
-            colors={["rgba(31,41,55,0.95)", "rgba(17,24,39,0.95)"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{
-              flex: 1,
-              borderRadius: 28,
-            }}
-          />
+          <View style={{ flex: 1, borderRadius: 32, overflow: "hidden" }}>
+            <LinearGradient
+              colors={["#111827ee", "#020617ee"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ flex: 1 }}
+            />
+          </View>
         ),
 
-        tabBarActiveTintColor: "#ffffff",
-        tabBarInactiveTintColor: "rgba(255,255,255,0.45)",
-
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: "600",
+        tabBarIcon: ({ focused }) => {
+          const validRouteName: TabName = (["index", "checkins", "profile"] as const).includes(route.name as TabName)
+            ? (route.name as TabName)
+            : "index";
+          return <TabIcon routeName={validRouteName} focused={focused} />;
         },
-
-        tabBarItemStyle: {
-          marginVertical: 10,
-        },
-
-        tabBarIcon: ({ focused, color, size }) => {
-          if (route.name === "index") {
-            return (
-              <View
-                style={{
-                  alignItems: "center",
-                  transform: [{ translateY: focused ? -2 : 0 }],
-                }}
-              >
-                <Ionicons
-                  name={focused ? "home" : "home-outline"}
-                  size={focused ? 26 : 24}
-                  color={color}
-                />
-                {focused && (
-                  <View
-                    style={{
-                      marginTop: 4,
-                      width: 6,
-                      height: 6,
-                      borderRadius: 3,
-                      backgroundColor: Colors.accent,
-                    }}
-                  />
-                )}
-              </View>
-            );
-          }
-
-          if (route.name === "checkins") {
-            return (
-              <View
-                style={{
-                  alignItems: "center",
-                  transform: [{ translateY: focused ? -2 : 0 }],
-                }}
-              >
-                <MaterialIcons
-                  name={focused ? "check-circle" : "check-circle"}
-                  size={focused ? 26 : 24}
-                  color={color}
-                />
-                {focused && (
-                  <View
-                    style={{
-                      marginTop: 4,
-                      width: 6,
-                      height: 6,
-                      borderRadius: 3,
-                      backgroundColor: Colors.accent,
-                    }}
-                  />
-                )}
-              </View>
-            );
-          }
-
-          if (route.name === "profile") {
-            return (
-              <View
-                style={{
-                  alignItems: "center",
-                  transform: [{ translateY: focused ? -2 : 0 }],
-                }}
-              >
-                <Ionicons
-                  name={focused ? "person-outline" : "person-outline"}
-                  size={focused ? 26 : 24}
-                  color={color}
-                />
-                {focused && (
-                  <View
-                    style={{
-                      marginTop: 4,
-                      width: 6,
-                      height: 6,
-                      borderRadius: 3,
-                      backgroundColor: Colors.accent,
-                    }}
-                  />
-                )}
-              </View>
-            );
-          }
-
-          return null;
-        },
-
-        tabBarShowLabel: false, // 🔥 cleaner, more premium
       })}
     >
       <Tabs.Screen name="index" options={{ title: "Home" }} />

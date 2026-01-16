@@ -119,10 +119,10 @@ export default function SignupScreen() {
                 </View>
                 
                 <View className="relative">
-                  <LinearGradient
+                  {/* <LinearGradient
                     colors={["#3b82f6", "#8b5cf6"]}
                     className="rounded-full p-1"
-                  >
+                  > */}
                     <View className="bg-slate-900 rounded-full p-1">
                       <Image
                         source={require("../../assets/images/image-ami.png")}
@@ -130,7 +130,7 @@ export default function SignupScreen() {
                         resizeMode="cover"
                       />
                     </View>
-                  </LinearGradient>
+                  {/* </LinearGradient> */}
                 </View>
               </View>
 
