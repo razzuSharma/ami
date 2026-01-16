@@ -10,22 +10,38 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { scheduleDailyReminder } from "../../helper/notifications";
+import { scheduleDailyReminder, setupNotificationListener } from "../../helper/notifications";
 
 export default function HomeScreen() {
   const router = useRouter();
 
   useEffect(() => {
-    // Schedule notification in background to avoid blocking app render
-    const scheduleNotification = async () => {
+    // Set up notification listener for Android rescheduling
+    const setupNotifications = async () => {
       try {
+        const notificationSubscription = await setupNotificationListener();
+
+        // Schedule notification in background to avoid blocking app render
         await scheduleDailyReminder();
+
+        // Store subscription for cleanup
+        if (notificationSubscription) {
+          (window as any).__notificationSubscription = notificationSubscription;
+        }
       } catch (error) {
-        console.warn("Failed to schedule daily reminder:", error);
+        console.warn("Failed to set up notifications:", error);
       }
     };
 
-    scheduleNotification();
+    setupNotifications();
+
+    // Cleanup subscription on unmount
+    return () => {
+      const subscription = (window as any).__notificationSubscription;
+      if (subscription?.remove) {
+        subscription.remove();
+      }
+    };
   }, []);
 
   return (
