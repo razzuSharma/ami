@@ -2,9 +2,19 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "../../contexts/AuthContext";
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const { signOut } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
 
   return (
     <LinearGradient
@@ -71,6 +81,7 @@ export default function ProfileScreen() {
             icon="log-out-outline"
             label="Logout"
             danger
+            onPress={handleLogout}
           />
         </View>
       </View>
@@ -111,13 +122,18 @@ function SecondaryAction({
   icon,
   label,
   danger,
+  onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   danger?: boolean;
+  onPress?: () => void;
 }) {
   return (
-    <Pressable className="flex-row items-center justify-between px-5 py-4 rounded-2xl bg-white/5 border border-white/10">
+    <Pressable
+      className="flex-row items-center justify-between px-5 py-4 rounded-2xl bg-white/5 border border-white/10"
+      onPress={onPress}
+    >
       <View className="flex-row items-center">
         <Ionicons
           name={icon}
