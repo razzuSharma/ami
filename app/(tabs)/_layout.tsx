@@ -52,8 +52,8 @@ function TabIcon({ routeName, focused }: TabIconProps) {
         <View
           style={{
             position: "absolute",
-            width: 40,
-            height: 40,
+            width: 35,
+            height: 35,
             borderRadius: 20,
             backgroundColor: "rgba(255,255,255,0.08)",
           }}
@@ -101,10 +101,10 @@ export default function TabsLayout() {
 
         tabBarStyle: {
           position: "absolute",
-          bottom: 18,
+          bottom: 55,
           left: 18,
           right: 18,
-          height: 64,
+          height: 60,
           borderRadius: 32,
           backgroundColor: "transparent",
           borderTopWidth: 0,
