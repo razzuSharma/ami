@@ -46,32 +46,42 @@ function TabIcon({ routeName, focused }: TabIconProps) {
   const iconName = focused || !inactiveIcon ? activeIcon : inactiveIcon;
 
   return (
-    <View style={{ alignItems: "center", justifyContent: "center" }}>
+    <View style={{ 
+      alignItems: "center", 
+      justifyContent: "center", 
+      flex: 1,
+      position: "relative",
+      minHeight: 60,
+    }}>
       {/* Soft white glow */}
       {focused && (
         <View
           style={{
             position: "absolute",
-            width: 35,
-            height: 35,
+            width: 40,
+            height: 40,
             borderRadius: 20,
             backgroundColor: "rgba(255,255,255,0.08)",
+            zIndex: 1,
           }}
         />
       )}
 
-      {/* Icon */}
+      {/* Icon Container */}
       <View
         style={{
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 2,
           transform: [
-            { translateY: focused ? -2 : 0 },
-            { scale: focused ? 1.08 : 1 },
+            { translateY: focused ? -3 : 0 },
+            { scale: focused ? 1.1 : 1 },
           ],
         }}
       >
         <IconComponent
           name={iconName as any}
-          size={26}
+          size={24}
           color={focused ? "#FFFFFF" : "rgba(255,255,255,0.5)"}
         />
       </View>
@@ -80,11 +90,13 @@ function TabIcon({ routeName, focused }: TabIconProps) {
       {focused && (
         <View
           style={{
-            marginTop: 6,
-            width: 16,
+            position: "absolute",
+            bottom: 8,
+            width: 20,
             height: 3,
             borderRadius: 2,
             backgroundColor: color,
+            zIndex: 2,
           }}
         />
       )}
@@ -101,20 +113,31 @@ export default function TabsLayout() {
 
         tabBarStyle: {
           position: "absolute",
-          bottom: 55,
-          left: 18,
-          right: 18,
-          height: 60,
-          borderRadius: 32,
+          bottom: 30,
+          left: 20,
+          right: 20,
+          height: 70,
+          borderRadius: 35,
           backgroundColor: "transparent",
           borderTopWidth: 0,
           elevation: 16,
+          paddingBottom: 0,
+          paddingTop: 0,
         },
 
         tabBarBackground: () => (
-          <View style={{ flex: 1, borderRadius: 32, overflow: "hidden" }}>
+          <View style={{ 
+            flex: 1, 
+            borderRadius: 35, 
+            overflow: "hidden",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: 8,
+          }}>
             <LinearGradient
-              colors={["#111827ee", "#020617ee"]}
+              colors={["#1f2937dd", "#111827dd"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={{ flex: 1 }}

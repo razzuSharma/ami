@@ -18,10 +18,8 @@ function RootLayoutNav() {
     if (user && inAuthGroup) {
       // User is signed in but in auth group, redirect to main app
       router.replace("/(tabs)");
-    } else if (!user && !inAuthGroup) {
-      // User is not signed in and not in auth group, redirect to welcome
-      router.replace("/");
     }
+    // Auth (login/signup) removed for now: unauthenticated users can use the app from welcome
   }, [user, loading, segments]);
 
   if (loading) {
