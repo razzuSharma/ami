@@ -16,6 +16,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { design, gradients } from "../../constants/design";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../helper/supabaseClient";
+import { ensureUserProfile } from "../../helper/userProfile";
 
 const MOOD_OPTIONS = [
   { id: "sad", label: "Low", value: 1 },
@@ -64,6 +65,7 @@ export default function DailyCheckin() {
       Alert.alert("Sign in required", "Please sign in to save your check-in.");
       return;
     }
+    await ensureUserProfile(user);
 
     if (!mood) {
       Alert.alert("Select a mood", "How are you feeling today?");
