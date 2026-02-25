@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useState } from "react";
 import {
@@ -6,543 +5,311 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withSpring,
-  withTiming,
-} from "react-native-reanimated";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Animated, { FadeInDown } from "react-native-reanimated";
+import { design, gradients } from "../../constants/design";
+import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "../../helper/supabaseClient";
 
-const moodOptions = [
-  {
-    emoji: "😞",
-    label: "Sad",
-    color: "#3b82f6",
-    gradient: ["#1e3a8a", "#1e40af"] as const,
-    accentGradient: ["#3b82f6", "#2563eb"] as const,
-  },
-  {
-    emoji: "😐",
-    label: "Neutral",
-    color: "#06b6d4",
-    gradient: ["#0c4a6e", "#0e7490"] as const,
-    accentGradient: ["#06b6d4", "#0891b2"] as const,
-  },
-  {
-    emoji: "😊",
-    label: "Good",
-    color: "#10b981",
-    gradient: ["#064e3b", "#065f46"] as const,
-    accentGradient: ["#10b981", "#059669"] as const,
-  },
-  {
-    emoji: "😄",
-    label: "Great",
-    color: "#8b5cf6",
-    gradient: ["#4c1d95", "#5b21b6"] as const,
-    accentGradient: ["#8b5cf6", "#7c3aed"] as const,
-  },
+const MOOD_OPTIONS = [
+  { id: "sad", label: "Low", value: 1 },
+  { id: "neutral", label: "Flat", value: 2 },
+  { id: "good", label: "Good", value: 3 },
+  { id: "great", label: "Great", value: 4 },
 ];
 
 export default function DailyCheckin() {
+  const { user } = useAuth();
   const [mood, setMood] = useState("");
   const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const fadeAnim = useSharedValue(0);
-  const scaleAnim = useSharedValue(0.8);
-  const shimmerAnim = useSharedValue(0);
-  const moodAnimations = moodOptions.reduce(
-    (acc, option) => {
-      acc[option.emoji] = useSharedValue(1);
-      return acc;
-    },
-    {} as Record<string, any>
-  );
-
-  const containerStyle = useAnimatedStyle(() => ({
-    opacity: fadeAnim.value,
-    transform: [{ scale: scaleAnim.value }],
-  }));
-
-  const shimmerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shimmerAnim.value }],
-  }));
+  const [existingId, setExistingId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Fade in animation on mount
-    fadeAnim.value = withTiming(1, { duration: 800 });
-    scaleAnim.value = withSpring(1, { damping: 12, stiffness: 80 });
-
-    // Shimmer effect
-    shimmerAnim.value = withRepeat(
-      withTiming(300, { duration: 3000 }),
-      -1,
-      false
-    );
-
-    // Load today's check-in from storage if it exists
-    const loadCheckin = async () => {
+    const load = async () => {
+      if (!user) return;
       const today = new Date().toISOString().split("T")[0];
-      const data = await AsyncStorage.getItem(`checkin-${today}`);
-      if (data) {
-        const parsed = JSON.parse(data);
-        setMood(parsed.mood);
-        setNotes(parsed.notes);
-        setSubmitted(true);
+      const { data, error } = await supabase
+        .from("daily_checkins")
+        .select("id,mood,notes")
+        .eq("user_id", user.id)
+        .eq("date", today)
+        .maybeSingle();
+
+      if (error) {
+        console.warn("Failed to load daily check-in:", error.message);
+        return;
       }
+
+      if (!data) return;
+
+      setExistingId(data.id);
+      setMood(MOOD_OPTIONS.find((option) => option.value === data.mood)?.id ?? "");
+      setNotes(data.notes ?? "");
+      setSubmitted(true);
     };
-    loadCheckin();
-  }, []);
 
-  const animateMoodSelection = (selectedEmoji: string) => {
-    // Reset all animations
-    Object.values(moodAnimations).forEach((anim) => {
-      anim.value = withSpring(1, { damping: 15, stiffness: 200 });
-    });
-
-    // Animate selected mood
-    moodAnimations[selectedEmoji].value = withSequence(
-      withSpring(1.3, { damping: 10, stiffness: 300 }),
-      withSpring(1.15, { damping: 12, stiffness: 200 })
-    );
-
-    setMood(selectedEmoji);
-  };
+    load();
+  }, [user]);
 
   const submitCheckin = async () => {
-    if (!mood.trim()) {
-      Alert.alert("Please select your mood!", "How are you feeling today?");
+    if (!user) {
+      Alert.alert("Sign in required", "Please sign in to save your check-in.");
+      return;
+    }
+
+    if (!mood) {
+      Alert.alert("Select a mood", "How are you feeling today?");
       return;
     }
 
     setIsSubmitting(true);
-
     try {
       const today = new Date().toISOString().split("T")[0];
-      await AsyncStorage.setItem(
-        `checkin-${today}`,
-        JSON.stringify({ mood, notes })
-      );
+      const moodValue = MOOD_OPTIONS.find((option) => option.id === mood)?.value ?? null;
 
-      // Success animation
-      fadeAnim.value = withSequence(
-        withTiming(0.7, { duration: 200 }),
-        withTiming(1, { duration: 300 })
-      );
+      if (existingId) {
+        const { error } = await supabase
+          .from("daily_checkins")
+          .update({
+            mood: moodValue,
+            notes: notes.trim() || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingId)
+          .eq("user_id", user.id);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from("daily_checkins")
+          .insert({
+            user_id: user.id,
+            date: today,
+            mood: moodValue,
+            notes: notes.trim() || null,
+          })
+          .select("id")
+          .single();
+        if (error) throw error;
+        setExistingId(data.id);
+      }
 
-      setTimeout(() => {
-        setSubmitted(true);
-        Alert.alert(
-          "Check-in saved! 🎉",
-          "Great job taking care of your mental health."
-        );
-      }, 500);
+      setSubmitted(true);
     } catch (error) {
-      Alert.alert("Error", "Failed to save check-in. Please try again.");
+      console.warn("Failed to save daily check-in:", error);
+      Alert.alert("Error", "Could not save your check-in.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (submitted) {
-    const selectedMoodData = moodOptions.find((m) => m.emoji === mood);
-    return (
-      <LinearGradient
-        colors={["#0f172a", "#1e293b", "#0f172a"]}
-        className="flex-1"
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          className="flex-1"
-        >
-          <ScrollView
-            contentContainerStyle={{
-              flexGrow: 1,
-              justifyContent: "center",
-              paddingHorizontal: 24,
-              paddingTop: 60,
-              paddingBottom: 40,
-            }}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Animated.View style={containerStyle}>
-              <View className="relative">
-                {/* Ambient glow */}
-                <View className="absolute -inset-8 opacity-30">
-                  <LinearGradient
-                    colors={
-                      selectedMoodData?.accentGradient || [
-                        "#3b82f6",
-                        "#2563eb",
-                      ]
-                    }
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    className="w-full h-full rounded-full blur-3xl"
-                  />
-                </View>
-
-                <View className="relative bg-slate-900/40 backdrop-blur-xl rounded-[32px] overflow-hidden border border-white/10">
-                  <LinearGradient
-                    colors={[
-                      "rgba(59, 130, 246, 0.1)",
-                      "rgba(37, 99, 235, 0.05)",
-                      "transparent",
-                    ]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    className="absolute inset-0"
-                  />
-
-                  <View className="p-8">
-                    {/* Success Icon */}
-                    <View className="items-center mb-8">
-                      <View className="relative mb-6">
-                        <View className="absolute inset-0 bg-blue-500/20 rounded-full blur-2xl" />
-                        <LinearGradient
-                          colors={
-                            selectedMoodData?.accentGradient || [
-                              "#3b82f6",
-                              "#2563eb",
-                            ]
-                          }
-                          className="rounded-full p-6 shadow-2xl"
-                        >
-                          <Text className="text-7xl">{mood}</Text>
-                        </LinearGradient>
-                      </View>
-
-                      <View className="items-center mb-4">
-                        <Text className="text-white text-3xl font-bold mb-2 tracking-tight">
-                          Check-In Complete!
-                        </Text>
-                        <View className="h-1 w-24 bg-gradient-to-r from-transparent via-blue-500 to-transparent rounded-full" />
-                      </View>
-
-                      <View className="bg-slate-800/60 backdrop-blur-sm px-5 py-2.5 rounded-full border border-blue-500/20">
-                        <Text className="text-blue-300 text-sm font-medium">
-                          {new Date().toLocaleDateString("en-US", {
-                            weekday: "long",
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Mood Summary Card */}
-                    <View className="mb-4">
-                      <LinearGradient
-                        colors={[
-                          "rgba(30, 41, 59, 0.6)",
-                          "rgba(15, 23, 42, 0.4)",
-                        ]}
-                        className="rounded-3xl p-6 border border-white/5"
-                      >
-                        <Text className="text-blue-200 text-xs font-bold mb-4 uppercase tracking-widest opacity-70">
-                          Your Mood Today
-                        </Text>
-                        <View className="flex-row items-center justify-center bg-slate-800/40 rounded-2xl p-4 border border-blue-500/10">
-                          <View className="bg-blue-500/10 rounded-full p-3 mr-4">
-                            <Text className="text-4xl">{mood}</Text>
-                          </View>
-                          <Text className="text-white text-2xl font-bold tracking-tight">
-                            {selectedMoodData?.label || "Feeling"}
-                          </Text>
-                        </View>
-                      </LinearGradient>
-                    </View>
-
-                    {/* Notes Card */}
-                    {notes.trim() && (
-                      <View className="mb-6">
-                        <LinearGradient
-                          colors={[
-                            "rgba(30, 41, 59, 0.6)",
-                            "rgba(15, 23, 42, 0.4)",
-                          ]}
-                          className="rounded-3xl p-6 border border-white/5"
-                        >
-                          <Text className="text-blue-200 text-xs font-bold mb-4 uppercase tracking-widest opacity-70">
-                            Your Thoughts
-                          </Text>
-                          <Text className="text-slate-100 text-base leading-7 font-light">
-                            "{notes}"
-                          </Text>
-                        </LinearGradient>
-                      </View>
-                    )}
-
-                    {/* Footer */}
-                    <View className="items-center pt-4">
-                      <LinearGradient
-                        colors={[
-                          "rgba(59, 130, 246, 0.15)",
-                          "rgba(37, 99, 235, 0.1)",
-                        ]}
-                        className="px-8 py-4 rounded-full border border-blue-400/20"
-                      >
-                        <Text className="text-blue-300 text-sm font-semibold tracking-wide">
-                          ✨ See you tomorrow! ✨
-                        </Text>
-                      </LinearGradient>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            </Animated.View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </LinearGradient>
-    );
-  }
+  const dateStr = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
 
   return (
-    <LinearGradient
-      colors={["#0f172a", "#1e293b", "#0f172a"]}
-      className="flex-1"
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        className="flex-1"
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-      >
-        <ScrollView
-          contentContainerStyle={{
-            flexGrow: 1,
-            paddingHorizontal: 24,
-            paddingTop: 60,
-            paddingBottom: 40,
-          }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+    <LinearGradient colors={gradients.appBackground} style={styles.screen}>
+      <SafeAreaView style={styles.screen}>
+        <KeyboardAvoidingView
+          style={styles.screen}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          <Animated.View style={containerStyle}>
-            {/* Header Section */}
-            <View className="mb-8">
-              <View className="relative overflow-hidden bg-slate-900/40 backdrop-blur-xl rounded-[32px] border border-white/10">
-                <LinearGradient
-                  colors={[
-                    "rgba(59, 130, 246, 0.15)",
-                    "rgba(37, 99, 235, 0.08)",
-                    "transparent",
-                  ]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  className="absolute inset-0"
-                />
+          <ScrollView
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.title}>Daily check-in</Text>
+            <Text style={styles.date}>{dateStr}</Text>
 
-                {/* Animated shimmer */}
-                <Animated.View
-                  style={[
-                    shimmerStyle,
-                    {
-                      position: "absolute",
-                      top: 0,
-                      left: -100,
-                      width: 100,
-                      height: "100%",
-                      opacity: 0.1,
-                    },
-                  ]}
-                >
-                  <LinearGradient
-                    colors={[
-                      "transparent",
-                      "rgba(255, 255, 255, 0.3)",
-                      "transparent",
-                    ]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    className="w-full h-full"
-                  />
-                </Animated.View>
-
-                <View className="p-6">
-                  <View className="items-center mb-2">
-                    <Text className="text-white text-4xl font-bold mb-2 tracking-tight">
-                      Daily Check-In
-                    </Text>
-                    <View className="h-1 w-24 bg-gradient-to-r from-blue-600 via-blue-400 to-cyan-400 rounded-full mb-3" />
-                  </View>
-
-                  <Text className="text-slate-300 text-base text-center leading-6 mb-4 font-light">
-                    Take a moment to reflect on your day and nurture your mental
-                    wellness
+            <Animated.View entering={FadeInDown.duration(400)} style={styles.panel}>
+              {submitted ? (
+                <>
+                  <Text style={styles.sectionTitle}>Saved for today</Text>
+                  <Text style={styles.value}>
+                    {MOOD_OPTIONS.find((m) => m.id === mood)?.label ?? mood}
                   </Text>
-
-                  <View className="flex-row justify-center">
-                    <LinearGradient
-                      colors={[
-                        "rgba(59, 130, 246, 0.2)",
-                        "rgba(37, 99, 235, 0.15)",
-                      ]}
-                      className="px-5 py-2 rounded-full border border-blue-400/30"
-                    >
-                      <Text className="text-blue-300 text-xs font-semibold tracking-wide">
-                        {new Date().toLocaleDateString("en-US", {
-                          weekday: "long",
-                          month: "long",
-                          day: "numeric",
-                        })}
-                      </Text>
-                    </LinearGradient>
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            {/* Mood Selection */}
-            <View className="mb-6">
-              <Text className="text-white text-xl font-bold mb-4 text-center tracking-tight">
-                How are you feeling today?
-              </Text>
-              <View className="flex-row justify-between gap-2">
-                {moodOptions.map((option) => {
-                  const moodStyle = useAnimatedStyle(() => ({
-                    transform: [{ scale: moodAnimations[option.emoji].value }],
-                  }));
-
-                  return (
-                    <Animated.View
-                      key={option.emoji}
-                      style={moodStyle}
-                      className="flex-1"
-                    >
+                  {notes.trim() ? <Text style={styles.savedNote}>{notes}</Text> : null}
+                  <TouchableOpacity
+                    onPress={() => setSubmitted(false)}
+                    style={[styles.button, styles.ghostButton]}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.ghostText}>Edit check-in</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.sectionTitle}>How do you feel right now?</Text>
+                  <View style={styles.moodRow}>
+                    {MOOD_OPTIONS.map((opt) => (
                       <TouchableOpacity
-                        onPress={() => animateMoodSelection(option.emoji)}
-                        activeOpacity={0.7}
+                        key={opt.id}
+                        onPress={() => setMood(opt.id)}
+                        activeOpacity={0.85}
+                        style={[styles.moodChip, mood === opt.id && styles.moodChipActive]}
                       >
-                        <View className="relative">
-                          {mood === option.emoji && (
-                            <View className="absolute -inset-1 opacity-40">
-                              <LinearGradient
-                                colors={option.accentGradient}
-                                className="w-full h-full rounded-2xl blur-xl"
-                              />
-                            </View>
-                          )}
-
-                          <LinearGradient
-                            colors={
-                              mood === option.emoji
-                                ? option.gradient
-                                : [
-                                    "rgba(30, 41, 59, 0.4)",
-                                    "rgba(15, 23, 42, 0.6)",
-                                  ]
-                            }
-                            className={`items-center p-4 rounded-2xl border-2 ${
-                              mood === option.emoji
-                                ? "border-blue-400/50"
-                                : "border-slate-700/50"
-                            }`}
-                          >
-                            <View
-                              className={`${mood === option.emoji ? "bg-white/10" : ""} rounded-full p-1 mb-1 items-center justify-center`}
-                            >
-                              <Text className="text-4xl drop-shadow-lg leading-none">
-                                {option.emoji}
-                              </Text>
-                            </View>
-                            <Text
-                              className={`text-xs font-bold text-center tracking-wide ${
-                                mood === option.emoji
-                                  ? "text-white"
-                                  : "text-slate-400"
-                              }`}
-                            >
-                              {option.label}
-                            </Text>
-                          </LinearGradient>
-                        </View>
+                        <Text
+                          style={[styles.moodLabel, mood === opt.id && styles.moodLabelActive]}
+                        >
+                          {opt.label}
+                        </Text>
                       </TouchableOpacity>
-                    </Animated.View>
-                  );
-                })}
-              </View>
-            </View>
+                    ))}
+                  </View>
 
-            {/* Notes Section */}
-            <View className="mb-6">
-              <Text className="text-white text-lg font-bold mb-3 text-center tracking-tight">
-                Notes & Thoughts
-              </Text>
-              <View className="relative">
-                <LinearGradient
-                  colors={["rgba(30, 41, 59, 0.6)", "rgba(15, 23, 42, 0.8)"]}
-                  className="rounded-2xl overflow-hidden border border-slate-700/50"
-                >
+                  <Text style={styles.notesLabel}>Notes</Text>
                   <TextInput
-                    className="text-white p-4 min-h-[120px] text-sm leading-5"
-                    placeholder="What's on your mind? Share your thoughts, feelings, or anything you'd like to remember..."
-                    placeholderTextColor="#64748b"
+                    style={styles.input}
+                    placeholder="One sentence about your day..."
+                    placeholderTextColor={design.colors.mutedInk}
                     value={notes}
                     onChangeText={setNotes}
                     multiline
                     textAlignVertical="top"
-                    selectionColor="#3b82f6"
                   />
-                </LinearGradient>
 
-                <View className="absolute -top-2 -right-2 bg-blue-500/20 rounded-full p-2 border border-blue-400/30 backdrop-blur-sm">
-                  <Text className="text-xl">💭</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              onPress={submitCheckin}
-              disabled={isSubmitting}
-              activeOpacity={0.85}
-            >
-              <View className="relative">
-                {!isSubmitting && (
-                  <View className="absolute -inset-1 opacity-50">
-                    <LinearGradient
-                      colors={["#3b82f6", "#2563eb", "#1d4ed8"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      className="w-full h-full rounded-2xl blur-lg"
-                    />
-                  </View>
-                )}
-
-                <LinearGradient
-                  colors={
-                    isSubmitting
-                      ? ["#475569", "#334155"]
-                      : ["#3b82f6", "#2563eb", "#1d4ed8"]
-                  }
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  className="rounded-2xl py-4 items-center border border-white/10"
-                >
-                  <Text
-                    className={`font-bold text-lg tracking-wide ${
-                      isSubmitting ? "text-slate-300" : "text-white"
-                    }`}
+                  <TouchableOpacity
+                    onPress={submitCheckin}
+                    style={[styles.button, isSubmitting && styles.buttonDisabled]}
+                    disabled={isSubmitting}
+                    activeOpacity={0.9}
                   >
-                    {isSubmitting ? "✨ Saving..." : "Complete Check-In ✨"}
-                  </Text>
-                </LinearGradient>
-              </View>
-            </TouchableOpacity>
-          </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+                    <Text style={styles.buttonText}>
+                      {isSubmitting ? "Saving..." : "Save check-in"}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </Animated.View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </LinearGradient>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: design.space.xl,
+    paddingTop: 16,
+    paddingBottom: 120,
+  },
+  title: {
+    color: design.colors.textPrimary,
+    fontSize: 30,
+    fontWeight: "700",
+  },
+  date: {
+    color: design.colors.textSecondary,
+    fontSize: 14,
+    marginTop: 5,
+    marginBottom: design.space.lg,
+  },
+  panel: {
+    borderRadius: design.radius.xl,
+    backgroundColor: design.colors.surface,
+    borderWidth: 1,
+    borderColor: design.colors.border,
+    padding: design.space.lg,
+  },
+  sectionTitle: {
+    color: design.colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 14,
+  },
+  moodRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 18,
+  },
+  moodChip: {
+    flex: 1,
+    borderRadius: design.radius.md,
+    borderWidth: 1,
+    borderColor: design.colors.border,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  moodChipActive: {
+    backgroundColor: design.colors.accentSoft,
+    borderColor: "rgba(94,207,177,0.45)",
+  },
+  moodLabel: {
+    color: design.colors.textSecondary,
+    fontWeight: "600",
+    fontSize: 13,
+  },
+  moodLabelActive: {
+    color: design.colors.textPrimary,
+  },
+  notesLabel: {
+    color: design.colors.textSecondary,
+    marginBottom: 8,
+    fontSize: 13,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  input: {
+    minHeight: 100,
+    borderRadius: design.radius.md,
+    borderWidth: 1,
+    borderColor: design.colors.border,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    padding: design.space.md,
+    color: design.colors.textPrimary,
+    fontSize: 15,
+    marginBottom: 16,
+  },
+  button: {
+    borderRadius: design.radius.lg,
+    backgroundColor: design.colors.accentEnd,
+    alignItems: "center",
+    paddingVertical: 14,
+  },
+  buttonText: {
+    color: design.colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  buttonDisabled: {
+    opacity: 0.55,
+  },
+  value: {
+    color: design.colors.accentStart,
+    fontWeight: "700",
+    fontSize: 22,
+    marginBottom: 12,
+  },
+  savedNote: {
+    color: design.colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 21,
+    marginBottom: 16,
+  },
+  ghostButton: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: design.colors.border,
+  },
+  ghostText: {
+    color: design.colors.textSecondary,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+});

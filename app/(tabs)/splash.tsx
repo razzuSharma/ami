@@ -8,10 +8,10 @@ export default function SplashScreen() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      router.replace("/welcome"); // Navigate to welcome after 2 sec
+      router.replace("/(auth)/welcome"); // Navigate to welcome after 2 sec
     }, 2000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [router]);
 
   return (
     <View style={styles.container}>
