@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
@@ -7,11 +8,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, { FadeInDown } from "react-native-reanimated";
+import { design, gradients } from "../../constants/design";
 
 type Message = {
   id: string;
@@ -20,21 +24,18 @@ type Message = {
 };
 
 export default function ChatScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList<Message>>(null);
   const [input, setInput] = useState("");
 
   const initialMessages = useMemo<Message[]>(
     () => [
-      { id: "1", text: "Good evening! 🌙\nHow are you feeling?", user: "bot" },
-      {
-        id: "2",
-        text: "Honestly, a bit drained. It was intense.",
-        user: "user",
-      },
-      { id: "3", text: "I understand. Take a deep breath. 🌿", user: "bot" },
+      { id: "1", text: "Hi. I am here with you. How is your energy right now?", user: "bot" },
+      { id: "2", text: "A little drained after work.", user: "user" },
+      { id: "3", text: "That makes sense. Want to name one thing that felt heavy?", user: "bot" },
     ],
-    [],
+    []
   );
 
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -42,7 +43,7 @@ export default function ChatScreen() {
   useEffect(() => {
     const timer = setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+    }, 120);
     return () => clearTimeout(timer);
   }, [messages]);
 
@@ -57,155 +58,202 @@ export default function ChatScreen() {
     setInput("");
   };
 
-  const headerHeight = 64;
-  const keyboardVerticalOffset =
-    Platform.OS === "ios" ? insets.top + headerHeight : 0;
-
   return (
-    <LinearGradient
-      colors={["#1a0f2e", "#2d1b4e", "#1a1625"]}
-      className="flex-1"
-    >
+    <LinearGradient colors={gradients.appBackground} style={styles.screen}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.screen}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={keyboardVerticalOffset}
+        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 64 : 0}
       >
-        <View style={{ flex: 1, paddingTop: insets.top }}>
-          {/* Header */}
-          <View className="px-4 pt-2 pb-5 flex-row items-center justify-between">
-            <Pressable className="w-11 h-11 rounded-full border border-white/15 bg-white/8 items-center justify-center">
-              <Ionicons name="chevron-back" size={22} color="#faf8f5" />
-            </Pressable>
-            <View className="flex-1 flex-row items-center ml-4">
-              <View className="relative">
-                <View
-                  style={{
-                    position: "absolute",
-                    width: 56,
-                    height: 56,
-                    borderRadius: 28,
-                    backgroundColor: "rgba(167,139,250,0.25)",
-                    top: -4,
-                    left: -4,
-                  }}
-                />
-                <View className="w-12 h-12 rounded-full overflow-hidden bg-purple-700/50 border border-white/15">
-                  <Image
-                    source={require("../../assets/images/image-ami.png")}
-                    className="w-full h-full"
-                    resizeMode="cover"
-                  />
-                </View>
-              </View>
-              <View className="ml-3">
-                <Text className="text-[#faf8f5] text-xl font-semibold">
-                  Companion
-                </Text>
-                <View className="flex-row items-center mt-0.5">
-                  <View className="w-2.5 h-2.5 rounded-full bg-emerald-400/90 mr-2" />
-                  <Text className="text-purple-200/90 text-xs">Online</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* Messages Container */}
-          <View style={{ flex: 1 }}>
-            <FlatList
-              style={{ flex: 1 }}
-              ref={flatListRef}
-              data={messages}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => {
-                const isUser = item.user === "user";
-                return (
-                  <View
-                    className={`mb-4 ${isUser ? "self-end" : "self-start"}`}
-                  >
-                    <View
-                      className={`px-5 py-4 max-w-[85%] rounded-[32px] ${
-                        isUser
-                          ? "rounded-br-md"
-                          : "rounded-bl-md bg-white/12 border border-white/5"
-                      }`}
-                      style={
-                        isUser
-                          ? {
-                              backgroundColor: "rgba(124,58,237,0.85)",
-                              shadowColor: "#7c3aed",
-                              shadowOffset: { width: 0, height: 4 },
-                              shadowOpacity: 0.2,
-                              shadowRadius: 12,
-                              elevation: 4,
-                            }
-                          : undefined
-                      }
-                    >
-                      <Text
-                        className="text-[#faf8f5] text-lg leading-[1.65]"
-                        style={{ lineHeight: 26 }}
-                      >
-                        {item.text}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              }}
-              contentContainerStyle={{
-                flexGrow: 1,
-                paddingHorizontal: 18,
-                paddingBottom: 88,
-              }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            />
-            {/* Input Bar */}
-            <View
-              style={{
-                paddingHorizontal: 18,
-                paddingBottom: Math.max(insets.bottom, 16),
-                paddingTop: 12,
-              }}
+        <View style={[styles.screen, { paddingTop: insets.top }]}>
+          <Animated.View entering={FadeInDown.duration(380)} style={styles.header}>
+            <Pressable
+              onPress={() => router.back()}
+              style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
             >
-              <View
-                className="flex-row items-center rounded-[28px] px-5 py-2"
-                style={{
-                  backgroundColor: "rgba(255,255,255,0.08)",
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.12)",
-                  shadowColor: "#1a1625",
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.15,
-                  shadowRadius: 12,
-                  elevation: 2,
-                }}
-              >
-                <TextInput
-                  className="flex-1 text-[#faf8f5] text-base px-2 min-h-[48px]"
-                  placeholder="What's on your mind?"
-                  placeholderTextColor="#c4b5fd"
-                  value={input}
-                  onChangeText={setInput}
-                  onSubmitEditing={sendMessage}
-                  multiline={false}
-                />
-                <Pressable
-                  onPress={sendMessage}
-                  className="ml-2 w-11 h-11 rounded-full overflow-hidden"
-                >
-                  <LinearGradient
-                    colors={["#c084fc", "#a78bfa", "#7c3aed"]}
-                    className="w-full h-full items-center justify-center"
-                  >
-                    <Ionicons name="arrow-up" size={22} color="#faf8f5" />
-                  </LinearGradient>
-                </Pressable>
+              <Ionicons name="chevron-back" size={20} color={design.colors.textPrimary} />
+            </Pressable>
+
+            <View style={styles.headerIdentity}>
+              <Image source={require("../../assets/images/image-ami.png")} style={styles.avatar} />
+              <View>
+                <Text style={styles.headerTitle}>Ami</Text>
+                <View style={styles.statusRow}>
+                  <View style={styles.onlineDot} />
+                  <Text style={styles.statusText}>Online now</Text>
+                </View>
               </View>
             </View>
-          </View>
+          </Animated.View>
+
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => {
+              const isUser = item.user === "user";
+              return (
+                <Animated.View
+                  entering={FadeInDown.duration(280)}
+                  style={[styles.messageRow, isUser ? styles.userRow : styles.botRow]}
+                >
+                  <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.botBubble]}>
+                    <Text style={styles.messageText}>{item.text}</Text>
+                  </View>
+                </Animated.View>
+              );
+            }}
+            contentContainerStyle={styles.messageList}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          />
+
+          <Animated.View
+            entering={FadeInDown.delay(80).duration(420)}
+            style={[styles.inputWrap, { paddingBottom: Math.max(insets.bottom, 14) }]}
+          >
+            <View style={styles.inputRow}>
+              <TextInput
+                style={styles.input}
+                placeholder="Write what is on your mind..."
+                placeholderTextColor={design.colors.mutedInk}
+                value={input}
+                onChangeText={setInput}
+                onSubmitEditing={sendMessage}
+              />
+              <Pressable onPress={sendMessage} style={({ pressed }) => [styles.sendButton, pressed && styles.pressed]}>
+                <Ionicons name="arrow-up" size={18} color={design.colors.textPrimary} />
+              </Pressable>
+            </View>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
     </LinearGradient>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
+  header: {
+    paddingHorizontal: design.space.xl,
+    paddingTop: 8,
+    paddingBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: design.colors.surface,
+    borderWidth: 1,
+    borderColor: design.colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIdentity: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: design.colors.border,
+  },
+  headerTitle: {
+    color: design.colors.textPrimary,
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 2,
+  },
+  onlineDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: design.colors.success,
+  },
+  statusText: {
+    color: design.colors.textSecondary,
+    fontSize: 12,
+  },
+  messageList: {
+    paddingHorizontal: design.space.xl,
+    paddingTop: 12,
+    paddingBottom: 14,
+  },
+  messageRow: {
+    marginBottom: 10,
+    flexDirection: "row",
+  },
+  userRow: {
+    justifyContent: "flex-end",
+  },
+  botRow: {
+    justifyContent: "flex-start",
+  },
+  messageBubble: {
+    maxWidth: "84%",
+    borderRadius: 18,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
+  userBubble: {
+    backgroundColor: "rgba(14,165,233,0.8)",
+    borderBottomRightRadius: 8,
+  },
+  botBubble: {
+    backgroundColor: design.colors.surface,
+    borderWidth: 1,
+    borderColor: design.colors.border,
+    borderBottomLeftRadius: 8,
+  },
+  messageText: {
+    color: design.colors.textPrimary,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  inputWrap: {
+    paddingHorizontal: design.space.xl,
+    paddingTop: 8,
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: design.colors.border,
+    borderRadius: design.radius.lg,
+    backgroundColor: design.colors.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  input: {
+    flex: 1,
+    color: design.colors.textPrimary,
+    fontSize: 15,
+    paddingHorizontal: 8,
+  },
+  sendButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: design.colors.accentEnd,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.97 }],
+  },
+});

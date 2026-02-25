@@ -1,31 +1,36 @@
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
-import {
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Animated, {
+  Easing,
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
+import { AppTheme, gradients } from "../../constants/design";
+import { useAuth } from "../../contexts/AuthContext";
 import { scheduleDailyReminder, setupNotificationListener } from "../../helper/notifications";
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const displayName = user?.email?.split("@")[0]?.replace(/[^a-zA-Z0-9]/g, "") || "friend";
 
   useEffect(() => {
-    // Set up notification listener for Android rescheduling
     const setupNotifications = async () => {
+      if ((globalThis as any).__dailyReminderSetup) return;
       try {
         const notificationSubscription = await setupNotificationListener();
-
-        // Schedule notification in background to avoid blocking app render
         await scheduleDailyReminder();
-
-        // Store subscription for cleanup
+        (globalThis as any).__dailyReminderSetup = true;
         if (notificationSubscription) {
-          (window as any).__notificationSubscription = notificationSubscription;
+          (globalThis as any).__notificationSubscription = notificationSubscription;
         }
       } catch (error) {
         console.warn("Failed to set up notifications:", error);
@@ -34,9 +39,8 @@ export default function HomeScreen() {
 
     setupNotifications();
 
-    // Cleanup subscription on unmount
     return () => {
-      const subscription = (window as any).__notificationSubscription;
+      const subscription = (globalThis as any).__notificationSubscription;
       if (subscription?.remove) {
         subscription.remove();
       }
@@ -44,254 +48,358 @@ export default function HomeScreen() {
   }, []);
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
-        {/* Top App Bar */}
-        <View style={styles.topBar}>
-          <View>
-            <Text style={styles.subtitle}>Welcome back,</Text>
-            <Text style={styles.title}>Alex</Text>
+    <LinearGradient colors={gradients.appBackground} style={styles.screen}>
+      <SafeAreaView style={styles.screen}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.topBar}>
+            <View>
+              <Text style={styles.eyebrow}>Good evening</Text>
+              <Text style={styles.topTitle}>{displayName}</Text>
+            </View>
           </View>
-          <TouchableOpacity style={styles.iconButton}>
-            <Ionicons name="settings-outline" size={24} color="#faf8f5" />
-          </TouchableOpacity>
-        </View>
 
-        {/* Hero Image */}
-        <View style={styles.heroWrapper}>
-          <View style={styles.heroImageFrame}>
-            <Image
-              source={require("../../assets/images/image-ami.png")}
-              style={styles.heroImage}
-              resizeMode="cover"
+          <Animated.View entering={FadeInDown.duration(420)} style={styles.heroFrame}>
+            <HeroMesh />
+            <View style={styles.heroContent}>
+              <Text style={styles.heroTitle}>How are you feeling today?</Text>
+              <Text style={styles.heroSub}>Stay grounded with one mindful check-in.</Text>
+            </View>
+            <Image source={require("../../assets/images/image-ami.png")} style={styles.heroAvatar} />
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(80).duration(440)} style={styles.section}>
+            <FeatureCard
+              accentColor={AppTheme.colors.accentPrimary}
+              icon="sparkles-outline"
+              title="Talk to Ami"
+              description="A short guided chat to settle your thoughts."
+              onPress={() => router.push("/chat")}
             />
-          </View>
-        </View>
+            <FeatureCard
+              accentColor={AppTheme.colors.accentSecondary}
+              icon="book-outline"
+              title="Open Journal"
+              description="Capture one honest paragraph before bed."
+              onPress={() => router.push("/journal")}
+            />
+          </Animated.View>
 
-        {/* Headline */}
-        <View style={styles.headline}>
-          <Text style={styles.headlineText}>
-            How are you feeling{"\n"}today?
-          </Text>
-          <Text style={styles.headlineSub}>
-            I'm here to listen whenever you're ready.
-          </Text>
-        </View>
+          <Animated.View entering={FadeInDown.delay(140).duration(460)}>
+            <DailyRhythmCard onPress={() => router.push("/checkins")} />
+          </Animated.View>
+        </ScrollView>
+      </SafeAreaView>
+    </LinearGradient>
+  );
+}
 
-        {/* Action Buttons */}
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.card, styles.cardPrimary]}
-            onPress={() => router.push("/chat")}
-          >
-            <View style={styles.cardContent}>
-              <View style={[styles.cardAvatar, styles.cardAvatarPrimary]}>
-                <Ionicons name="mic-outline" size={24} color="#faf8f5" />
-              </View>
-              <View>
-                <Text style={styles.cardTitle}>Talk to me</Text>
-                <Text style={styles.cardSubtitle}>Voice chat</Text>
-              </View>
-            </View>
-            <Ionicons name="arrow-forward-outline" size={24} color="#faf8f5" />
-          </TouchableOpacity>
+function HeroMesh() {
+  const drift = useSharedValue(0);
 
-          <TouchableOpacity
-            style={[styles.card, styles.cardSecondary]}
-            onPress={() => router.push("/journal")}
-          >
-            <View style={styles.cardContent}>
-              <View style={[styles.cardAvatar, styles.cardAvatarSecondary]}>
-                <Ionicons name="create-outline" size={24} color="#faf8f5" />
-              </View>
-              <View>
-                <Text style={styles.cardTitle}>Write something</Text>
-                <Text style={styles.cardSubtitle}>Journal entry</Text>
-              </View>
-            </View>
-            <Ionicons name="arrow-forward-outline" size={24} color="#faf8f5" />
-          </TouchableOpacity>
-        </View>
+  useEffect(() => {
+    drift.value = withRepeat(
+      withTiming(1, { duration: 5500, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, [drift]);
 
-        {/* Recent Activity */}
-        <View style={styles.recentWrapper}>
-          <View style={styles.recentCard}>
-            <View style={styles.recentHeader}>
-              <Text style={styles.recentLabel}>Last Check-in</Text>
-              <Text style={styles.recentLabel}>Yesterday</Text>
-            </View>
-            <Text style={styles.recentBody}>
-              "I was feeling a bit overwhelmed by the upcoming project, but
-              talking it through helped clarify my next steps..."
-            </Text>
-          </View>
+  const orbOne = useAnimatedStyle(() => ({
+    transform: [{ translateX: drift.value * 24 }, { translateY: drift.value * -12 }],
+  }));
+  const orbTwo = useAnimatedStyle(() => ({
+    transform: [{ translateX: drift.value * -18 }, { translateY: drift.value * 16 }],
+  }));
+
+  return (
+    <LinearGradient colors={gradients.heroMesh} style={styles.meshBase}>
+      <Animated.View style={[styles.meshOrbTeal, orbOne]} />
+      <Animated.View style={[styles.meshOrbBlue, orbTwo]} />
+    </LinearGradient>
+  );
+}
+
+function FeatureCard({
+  accentColor,
+  icon,
+  title,
+  description,
+  onPress,
+}: {
+  accentColor: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.featurePress, pressed && styles.pressed]}>
+      <View style={styles.featureCard}>
+        <View style={[styles.featureAccent, { backgroundColor: accentColor }]} />
+        <View style={styles.featureIconWrap}>
+          <Ionicons name={icon} size={24} color={accentColor} />
         </View>
-      </ScrollView>
+        <View style={styles.featureBody}>
+          <Text style={styles.featureTitle}>{title}</Text>
+          <Text style={styles.featureDescription}>{description}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={AppTheme.colors.textMuted} />
+      </View>
+    </Pressable>
+  );
+}
+
+function DailyRhythmCard({ onPress }: { onPress: () => void }) {
+  const bounce = useSharedValue(0);
+  const progress = 0.62;
+
+  const bounceStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + bounce.value * 0.08 }],
+  }));
+
+  const handlePress = () => {
+    bounce.value = withSpring(1, { damping: 7, stiffness: 180 }, () => {
+      bounce.value = withTiming(0, { duration: 180 });
+    });
+    onPress();
+  };
+
+  return (
+    <View style={styles.rhythmCard}>
+      <View style={styles.rhythmHeader}>
+        <Text style={styles.rhythmTitle}>Daily Rhythm</Text>
+        <View style={styles.timeBadge}>
+          <Text style={styles.timeBadgeText}>2 min</Text>
+        </View>
+      </View>
+
+      <Text style={styles.rhythmSub}>Today&apos;s consistency</Text>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+      </View>
+
+      <View style={styles.rhythmFooter}>
+        <Text style={styles.progressLabel}>62% completed</Text>
+        <Pressable onPress={handlePress}>
+          <Animated.View style={[styles.ctaCircle, bounceStyle]}>
+            <Ionicons name="arrow-forward" size={16} color={AppTheme.colors.background} />
+          </Animated.View>
+        </Pressable>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: "#1a1625",
+    backgroundColor: AppTheme.colors.background,
+  },
+  content: {
+    paddingHorizontal: AppTheme.space.xl,
+    paddingBottom: 132,
+    paddingTop: 10,
+    gap: AppTheme.space.lg,
   },
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
-    paddingTop: 48,
-    paddingBottom: 20,
   },
-  subtitle: {
-    color: "rgba(250,248,245,0.65)",
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  title: {
-    color: "#faf8f5",
-    fontSize: 22,
-    fontWeight: "700",
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  heroWrapper: {
-    alignItems: "center",
-    paddingVertical: 20,
-  },
-  heroImageFrame: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    overflow: "hidden",
-    shadowColor: "#a78bfa",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.25,
-    shadowRadius: 24,
-    elevation: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  heroImage: {
-    width: "100%",
-    height: "100%",
-  },
-  headline: {
-    paddingHorizontal: 28,
-    paddingTop: 12,
-    paddingBottom: 12,
-    alignItems: "center",
-  },
-  headlineText: {
-    color: "#faf8f5",
-    fontSize: 23,
-    fontWeight: "700",
-    textAlign: "center",
-    lineHeight: 30,
-  },
-  headlineSub: {
-    color: "rgba(250,248,245,0.7)",
-    fontSize: 15,
-    marginTop: 10,
-    textAlign: "center",
-    lineHeight: 22,
-  },
-  actions: {
-    paddingHorizontal: 24,
-    paddingVertical: 28,
-    gap: 18,
-  },
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderRadius: 28,
-    height: 88,
-    paddingHorizontal: 26,
-    shadowColor: "#1a1625",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 6,
-    borderWidth: 1,
-  },
-  cardPrimary: {
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderColor: "rgba(255,255,255,0.1)",
-  },
-  cardSecondary: {
-    backgroundColor: "rgba(196,181,253,0.35)",
-    borderColor: "rgba(167,139,250,0.3)",
-  },
-  cardContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 18,
-  },
-  cardAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#a78bfa",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  cardAvatarPrimary: {
-    backgroundColor: "rgba(124,58,237,0.9)",
-  },
-  cardAvatarSecondary: {
-    backgroundColor: "rgba(196,181,253,0.5)",
-  },
-  cardTitle: {
-    color: "#faf8f5",
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
-  cardSubtitle: {
-    color: "rgba(250,248,245,0.65)",
+  eyebrow: {
+    color: AppTheme.colors.textMuted,
+    fontFamily: AppTheme.fonts.bodyMedium,
     fontSize: 13,
+    letterSpacing: 0.9,
+    textTransform: "uppercase",
   },
-  recentWrapper: {
-    paddingHorizontal: 24,
-    paddingBottom: 28,
+  topTitle: {
+    color: AppTheme.colors.textPrimary,
+    fontFamily: AppTheme.fonts.serifDisplay,
+    fontSize: 34,
+    marginTop: 4,
   },
-  recentCard: {
-    borderRadius: 28,
+  heroFrame: {
+    borderRadius: AppTheme.radius.xl,
+    overflow: "hidden",
+    minHeight: 220,
+    borderWidth: 1,
+    borderColor: AppTheme.colors.surfaceBorder,
+  },
+  meshBase: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  meshOrbTeal: {
+    position: "absolute",
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: "rgba(94,207,177,0.25)",
+    top: -38,
+    left: -30,
+  },
+  meshOrbBlue: {
+    position: "absolute",
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: "rgba(74,122,186,0.26)",
+    bottom: -60,
+    right: -40,
+  },
+  heroContent: {
+    paddingHorizontal: AppTheme.space.lg,
+    paddingVertical: AppTheme.space.xl,
+    maxWidth: 255,
+  },
+  heroTitle: {
+    color: AppTheme.colors.textPrimary,
+    fontSize: 40,
+    lineHeight: 44,
+    fontFamily: AppTheme.fonts.serifDisplay,
+    marginBottom: 10,
+  },
+  heroSub: {
+    color: AppTheme.colors.textMuted,
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: AppTheme.fonts.bodyRegular,
+  },
+  heroAvatar: {
+    position: "absolute",
+    right: 16,
+    bottom: 16,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.26,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  section: {
+    gap: 12,
+  },
+  featurePress: {
+    borderRadius: AppTheme.radius.lg,
+  },
+  featureCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: AppTheme.radius.lg,
+    borderWidth: 1,
+    borderColor: AppTheme.colors.surfaceBorder,
+    backgroundColor: AppTheme.colors.surface,
+    overflow: "hidden",
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  featureAccent: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+  },
+  featureIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.06)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    padding: 24,
+    borderColor: AppTheme.colors.surfaceBorder,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
   },
-  recentHeader: {
+  featureBody: {
+    flex: 1,
+  },
+  featureTitle: {
+    color: AppTheme.colors.textPrimary,
+    fontFamily: AppTheme.fonts.bodyBold,
+    fontSize: 16,
+    marginBottom: 3,
+  },
+  featureDescription: {
+    color: AppTheme.colors.textMuted,
+    fontFamily: AppTheme.fonts.bodyRegular,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  rhythmCard: {
+    borderRadius: AppTheme.radius.xl,
+    borderWidth: 1,
+    borderColor: AppTheme.colors.surfaceBorder,
+    backgroundColor: AppTheme.colors.surface,
+    padding: AppTheme.space.lg,
+    overflow: "hidden",
+  },
+  rhythmHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 10,
   },
-  recentLabel: {
-    color: "rgba(250,248,245,0.5)",
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+  rhythmTitle: {
+    color: AppTheme.colors.textPrimary,
+    fontFamily: AppTheme.fonts.bodyBold,
+    fontSize: 18,
   },
-  recentBody: {
-    color: "rgba(250,248,245,0.88)",
-    fontSize: 15,
-    lineHeight: 22,
+  timeBadge: {
+    borderRadius: AppTheme.radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "rgba(196,168,130,0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(196,168,130,0.55)",
+  },
+  timeBadgeText: {
+    color: AppTheme.colors.accentSecondary,
+    fontFamily: AppTheme.fonts.bodyBold,
+    fontSize: 12,
+  },
+  rhythmSub: {
+    color: AppTheme.colors.textMuted,
+    fontFamily: AppTheme.fonts.bodyRegular,
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  progressTrack: {
+    height: 9,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 9,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: AppTheme.colors.accentPrimary,
+    borderRadius: 9,
+  },
+  rhythmFooter: {
+    marginTop: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  progressLabel: {
+    color: AppTheme.colors.textMuted,
+    fontFamily: AppTheme.fonts.bodyMedium,
+    fontSize: 13,
+  },
+  ctaCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: AppTheme.colors.accentPrimary,
+  },
+  pressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.985 }],
   },
 });

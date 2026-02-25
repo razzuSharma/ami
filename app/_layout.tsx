@@ -1,5 +1,13 @@
 import { Slot, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
+import { useFonts } from "expo-font";
+import { DMSerifDisplay_400Regular } from "@expo-google-fonts/dm-serif-display";
+import {
+  DMSans_400Regular,
+  DMSans_500Medium,
+  DMSans_700Bold,
+} from "@expo-google-fonts/dm-sans";
+import { PlayfairDisplay_600SemiBold_Italic } from "@expo-google-fonts/playfair-display";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../contexts/AuthContext";
@@ -16,11 +24,14 @@ function RootLayoutNav() {
     const inAuthGroup = segments[0] === "(auth)";
 
     if (user && inAuthGroup) {
-      // User is signed in but in auth group, redirect to main app
       router.replace("/(tabs)");
+      return;
     }
-    // Auth (login/signup) removed for now: unauthenticated users can use the app from welcome
-  }, [user, loading, segments]);
+
+    if (!user && !inAuthGroup) {
+      router.replace("/(auth)/welcome");
+    }
+  }, [user, loading, segments, router]);
 
   if (loading) {
     return (
@@ -34,6 +45,22 @@ function RootLayoutNav() {
 }
 
 export default function AppLayout() {
+  const [fontsLoaded] = useFonts({
+    DMSerifDisplay_400Regular,
+    DMSans_400Regular,
+    DMSans_500Medium,
+    DMSans_700Bold,
+    PlayfairDisplay_600SemiBold_Italic,
+  });
+
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color="#5ECFB1" />
+      </View>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <AuthProvider>

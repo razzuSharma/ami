@@ -8,11 +8,14 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AppButton } from "../../components/ui/app-button";
+import { AppInput } from "../../components/ui/app-input";
+import { design, gradients } from "../../constants/design";
 import { useAuth } from "../../contexts/AuthContext";
 
 export default function SignupScreen() {
@@ -38,13 +41,20 @@ export default function SignupScreen() {
     }
     setLoading(true);
     try {
-      await signUp(trimmedEmail, password);
+      const { requiresEmailVerification } = await signUp(trimmedEmail, password);
+      if (requiresEmailVerification) {
+        router.replace({
+          pathname: "/(auth)/login",
+          params: { verify: "1", email: trimmedEmail },
+        });
+        return;
+      }
       router.replace("/(tabs)");
     } catch (err: unknown) {
       const message =
         err && typeof err === "object" && "message" in err
           ? String((err as { message: string }).message)
-          : "Something went wrong. Please try again.";
+          : "Unable to create account right now.";
       setError(message);
     } finally {
       setLoading(false);
@@ -52,54 +62,35 @@ export default function SignupScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={["#1a0f2e", "#2d1b4e", "#1a1625"]}
-      className="flex-1"
-    >
+    <LinearGradient colors={gradients.appBackground} style={styles.screen}>
       <KeyboardAvoidingView
-        className="flex-1"
+        style={styles.screen}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
         <ScrollView
-          contentContainerStyle={{
-            flexGrow: 1,
-            paddingTop: insets.top + 20,
-            paddingBottom: Math.max(insets.bottom, 24) + 80,
-            paddingHorizontal: 24,
-          }}
+          contentContainerStyle={[
+            styles.content,
+            {
+              paddingTop: insets.top + design.space.lg,
+              paddingBottom: Math.max(insets.bottom, 20) + 30,
+            },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          className="flex-1"
         >
-          {/* Back */}
-          <Pressable
-            onPress={() => router.back()}
-            className="w-11 h-11 rounded-full border border-white/15 bg-white/[0.08] items-center justify-center mb-8"
-            hitSlop={12}
-          >
-            <Ionicons name="chevron-back" size={26} color="#faf8f5" />
+          <Pressable onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={22} color={design.colors.textPrimary} />
           </Pressable>
 
-          {/* Header */}
-          <View className="mb-10">
-            <Text className="text-[#faf8f5] text-3xl font-bold mb-2">
-              Create account
-            </Text>
-            <Text className="text-white/70 text-base leading-6">
-              Join Ami and start your wellness journey
-            </Text>
-          </View>
+          <Text style={styles.title}>Create account</Text>
+          <Text style={styles.subtitle}>
+            Start your calm routine with check-ins and journaling.
+          </Text>
 
-          {/* Form */}
-          <View className="mb-8">
-            <Text className="text-violet-300 text-sm font-semibold uppercase tracking-wide mb-2">
-              Email
-            </Text>
-            <TextInput
-              className="bg-white/[0.06] rounded-2xl border border-white/15 px-5 py-4 text-base text-[#faf8f5]"
+          <View style={styles.panel}>
+            <AppInput
+              label="Email"
               placeholder="you@example.com"
-              placeholderTextColor="#a78bfa"
               value={email}
               onChangeText={(t) => {
                 setEmail(t);
@@ -111,13 +102,9 @@ export default function SignupScreen() {
               editable={!loading}
             />
 
-            <Text className="text-violet-300 text-sm font-semibold uppercase tracking-wide mt-5 mb-2">
-              Password
-            </Text>
-            <TextInput
-              className="bg-white/[0.06] rounded-2xl border border-white/15 px-5 py-4 text-base text-[#faf8f5]"
+            <AppInput
+              label="Password"
               placeholder="At least 6 characters"
-              placeholderTextColor="#a78bfa"
               value={password}
               onChangeText={(t) => {
                 setPassword(t);
@@ -128,58 +115,25 @@ export default function SignupScreen() {
             />
 
             {error ? (
-              <View className="flex-row items-center gap-2.5 mt-4 py-3 px-4 rounded-2xl bg-red-500/10 border border-red-400/30">
-                <Ionicons name="alert-circle-outline" size={18} color="#fca5a5" />
-                <Text className="flex-1 text-red-300 text-sm">{error}</Text>
+              <View style={styles.errorCard}>
+                <Ionicons name="alert-circle-outline" size={18} color={design.colors.danger} />
+                <Text style={styles.errorText}>{error}</Text>
               </View>
             ) : null}
 
-            <Pressable
-              onPress={handleSignUp}
-              disabled={loading}
-              className={`mt-7 rounded-3xl overflow-hidden ${loading ? "opacity-90" : ""}`}
-              style={{
-                shadowColor: "#7c3aed",
-                shadowOffset: { width: 0, height: 6 },
-                shadowOpacity: 0.3,
-                shadowRadius: 14,
-                elevation: 8,
-              }}
-            >
-              <LinearGradient
-                colors={
-                  loading
-                    ? ["#6b21a8", "#5b21b6"]
-                    : ["#a78bfa", "#7c3aed", "#6d28d9"]
-                }
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                className="py-5 items-center justify-center"
-              >
-                {loading ? (
-                  <ActivityIndicator size="small" color="#faf8f5" />
-                ) : (
-                  <Text className="text-[#faf8f5] text-lg font-bold">
-                    Sign up
-                  </Text>
-                )}
-              </LinearGradient>
-            </Pressable>
+            {loading ? (
+              <View style={styles.loadingButton}>
+                <ActivityIndicator color={design.colors.textPrimary} />
+              </View>
+            ) : (
+              <AppButton label="Create account" onPress={handleSignUp} />
+            )}
           </View>
 
-          {/* Footer */}
-          <View className="flex-row items-center justify-center gap-1.5 mt-6">
-            <Text className="text-white/65 text-[15px]">
-              Already have an account?
-            </Text>
-            <Pressable
-              onPress={() => router.push("/(auth)/login")}
-              disabled={loading}
-              hitSlop={8}
-            >
-              <Text className="text-violet-400 text-[15px] font-semibold">
-                Sign in
-              </Text>
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Already have an account?</Text>
+            <Pressable onPress={() => router.push("/(auth)/login")}>
+              <Text style={styles.footerLink}>Sign in</Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -187,3 +141,81 @@ export default function SignupScreen() {
     </LinearGradient>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
+  content: {
+    flexGrow: 1,
+    paddingHorizontal: design.space.xl,
+  },
+  backButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: design.colors.surface,
+    borderWidth: 1,
+    borderColor: design.colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: design.space.xl,
+  },
+  title: {
+    color: design.colors.textPrimary,
+    fontSize: 34,
+    fontWeight: "700",
+  },
+  subtitle: {
+    color: design.colors.textSecondary,
+    fontSize: 16,
+    marginTop: 6,
+    marginBottom: design.space.xl,
+    lineHeight: 22,
+  },
+  panel: {
+    backgroundColor: design.colors.surface,
+    borderWidth: 1,
+    borderColor: design.colors.border,
+    borderRadius: design.radius.xl,
+    padding: design.space.lg,
+  },
+  errorCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(251,113,133,0.35)",
+    backgroundColor: "rgba(251,113,133,0.12)",
+    padding: design.space.sm,
+    borderRadius: design.radius.md,
+    marginBottom: design.space.md,
+  },
+  errorText: {
+    color: "#fecdd3",
+    flex: 1,
+    fontSize: 13,
+  },
+  loadingButton: {
+    borderRadius: design.radius.lg,
+    paddingVertical: 16,
+    alignItems: "center",
+    backgroundColor: design.colors.accentEnd,
+  },
+  footer: {
+    marginTop: design.space.xl,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 6,
+  },
+  footerText: {
+    color: design.colors.textSecondary,
+    fontSize: 14,
+  },
+  footerLink: {
+    color: design.colors.accentStart,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+});
