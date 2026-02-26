@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppTheme, gradients } from "../constants/design";
@@ -81,10 +82,7 @@ function computeStreak(points: CheckinPoint[]) {
 export default function MoodTrendsScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const [allPoints, setAllPoints] = useState<CheckinPoint[]>([]);
   const [range, setRange] = useState<RangeKey>("1M");
-  const [loadError, setLoadError] = useState("");
-  const [loading, setLoading] = useState(true);
 
   const nowText = useMemo(
     () =>
@@ -96,17 +94,13 @@ export default function MoodTrendsScreen() {
     [],
   );
 
-  useEffect(() => {
-    const loadTrends = async () => {
-      if (!user) {
-        setAllPoints([]);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      setLoadError("");
-
+  const trendsQuery = useQuery({
+    queryKey: ["mood-trends", user?.id],
+    enabled: Boolean(user?.id),
+    staleTime: 3 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    queryFn: async () => {
+      if (!user?.id) return [];
       const from = new Date();
       from.setDate(from.getDate() - 365);
 
@@ -119,25 +113,20 @@ export default function MoodTrendsScreen() {
 
       if (error) {
         console.warn("Failed to load mood trends:", error.message);
-        setLoadError("Could not load mood trends.");
-        setAllPoints([]);
-        setLoading(false);
-        return;
+        throw new Error(error.message);
       }
 
-      const mapped = (data ?? [])
+      return (data ?? [])
         .filter((row) => typeof row.mood === "number")
         .map((row) => ({
           date: row.date,
           mood: Number(row.mood),
         }));
-
-      setAllPoints(mapped);
-      setLoading(false);
-    };
-
-    loadTrends();
-  }, [user]);
+    },
+  });
+  const allPoints = trendsQuery.data ?? [];
+  const loading = trendsQuery.isLoading;
+  const loadError = trendsQuery.isError ? "Could not load mood trends." : "";
 
   const filteredPoints = useMemo(() => {
     const start = getRangeStart(range);
@@ -206,7 +195,7 @@ export default function MoodTrendsScreen() {
 
   const streak = useMemo(() => computeStreak(filteredPoints), [filteredPoints]);
 
-  const chartPoints = useMemo(() => samplePoints(filteredPoints, 6), [filteredPoints]);
+  const chartPoints = useMemo(() => samplePoints(filteredPoints, 7), [filteredPoints]);
 
   const chartRows = useMemo(
     () =>
@@ -237,28 +226,25 @@ export default function MoodTrendsScreen() {
               <Text style={styles.statusMeta}>51%</Text>
             </View>
 
-            <Pressable
-              onPress={() => {
-                if (router.canGoBack()) {
-                  router.back();
-                  return;
-                }
-                router.replace("/(tabs)/profile");
-              }}
-              style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
-              accessibilityRole="button"
-              accessibilityLabel="Go back to profile"
-            >
-              <Ionicons
-                name="chevron-back"
-                size={16}
-                color={AppTheme.colors.textMuted}
-              />
-              <Text style={styles.backBtnText}>Profile</Text>
-            </Pressable>
-
-            <Text style={styles.title}>Mood Trends</Text>
+            <View style={styles.titleRow}>
+              <Pressable
+                onPress={() => {
+                  router.replace("/(tabs)/profile");
+                }}
+                style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Go back to profile"
+              >
+                <Ionicons
+                  name="chevron-back"
+                  size={16}
+                  color={AppTheme.colors.textMuted}
+                />
+              </Pressable>
+              <Text style={styles.title}>Mood Trends</Text>
+            </View>
             <Text style={styles.subtitle}>Your emotional patterns over time</Text>
+            <View style={styles.headerDivider} />
 
             <View style={styles.segmentWrap}>
               {(["7D", "1M", "3M", "ALL"] as const).map((option) => {
@@ -270,24 +256,32 @@ export default function MoodTrendsScreen() {
                     style={({ pressed }) => [
                       styles.segmentBtn,
                       active && styles.segmentBtnActive,
-                      pressed && styles.pressed,
+                      pressed && styles.segmentPressed,
                     ]}
                   >
-                    <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
-                      {option}
-                    </Text>
+                    <View
+                      style={[
+                        styles.segmentLabelWrap,
+                        active && styles.segmentLabelWrapActive,
+                      ]}
+                    >
+                      <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+                        {option}
+                      </Text>
+                    </View>
                   </Pressable>
                 );
               })}
             </View>
 
             <View style={styles.summaryRow}>
-              <View style={styles.summaryCard}>
+              <View style={styles.summaryTile}>
                 <Text style={styles.summaryEmoji}>{topMoodMeta.icon}</Text>
                 <Text style={styles.summaryMain}>{topMoodMeta.label}</Text>
                 <Text style={styles.summarySub}>Top mood</Text>
               </View>
-              <View style={styles.summaryCard}>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryTile}>
                 <Text style={styles.summaryEmoji}>📈</Text>
                 <Text style={styles.summaryMain}>
                   {changePct >= 0 ? "+" : ""}
@@ -295,7 +289,8 @@ export default function MoodTrendsScreen() {
                 </Text>
                 <Text style={styles.summarySub}>vs previous</Text>
               </View>
-              <View style={styles.summaryCard}>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryTile}>
                 <Text style={styles.summaryEmoji}>🔥</Text>
                 <Text style={styles.summaryMain}>{streak}d</Text>
                 <Text style={styles.summarySub}>Streak</Text>
@@ -307,9 +302,6 @@ export default function MoodTrendsScreen() {
             <View style={styles.chartCard}>
               <View style={styles.chartHeader}>
                 <Text style={styles.chartTitle}>Mood over time</Text>
-                <Text style={styles.chartMonth}>
-                  {new Date().toLocaleDateString("en-US", { month: "long" })}
-                </Text>
               </View>
 
               {loading ? (
@@ -317,46 +309,58 @@ export default function MoodTrendsScreen() {
               ) : chartPoints.length === 0 ? (
                 <Text style={styles.emptyText}>No mood check-ins yet.</Text>
               ) : (
-                <View style={styles.plainChartWrap}>
+                <View style={styles.sparkWrap}>
+                  <View style={styles.sparkMidLine} />
+                  {chartRows.length > 0 ? (
+                    <View style={styles.sparkTooltip}>
+                      <Text style={styles.sparkTooltipText}>
+                        {chartRows[chartRows.length - 1].mood.toFixed(1)}
+                      </Text>
+                    </View>
+                  ) : null}
                   {chartRows.map((row) => (
-                    <View key={row.key} style={styles.plainChartRow}>
+                    <View key={row.key} style={styles.sparkCol}>
+                      <View style={styles.sparkTrack}>
+                        <View
+                          style={[
+                            styles.sparkBar,
+                            { height: `${Math.max(16, row.mood * 22)}%` },
+                            row.isLast && styles.sparkBarLast,
+                          ]}
+                        />
+                      </View>
                       <Text
                         style={[styles.chartLabelText, row.isLast && styles.chartLabelTextLast]}
                       >
                         {row.isLast ? "Today" : row.label}
                       </Text>
-                      <View style={styles.plainTrack}>
-                        <View
-                          style={[
-                            styles.plainFill,
-                            { width: `${Math.max(10, row.mood * 24)}%` },
-                            row.isLast && styles.plainFillLast,
-                          ]}
-                        />
-                      </View>
-                      <Text style={styles.plainValue}>{row.mood.toFixed(1)}</Text>
                     </View>
                   ))}
                 </View>
               )}
+              <Text style={styles.chartMonthCentered}>
+                {new Date().toLocaleDateString("en-US", { month: "long" })}
+              </Text>
             </View>
 
             <View style={styles.breakdownCard}>
               <Text style={styles.chartTitle}>Emotion breakdown</Text>
               {breakdown.map((item) => (
                 <View key={item.key} style={styles.breakdownRow}>
-                  <Text style={styles.breakdownLabel}>
-                    {item.icon} {item.label}
-                  </Text>
+                  <View style={styles.breakdownTop}>
+                    <Text style={styles.breakdownLabel}>
+                      {item.icon} {item.label}
+                    </Text>
+                    <Text style={styles.breakdownPct}>{item.percentage}%</Text>
+                  </View>
                   <View style={styles.track}>
                     <View
                       style={[
                         styles.fill,
-                        { width: `${Math.max(8, item.percentage)}%`, backgroundColor: item.color },
+                        { width: `${item.percentage}%`, backgroundColor: item.color },
                       ]}
                     />
                   </View>
-                  <Text style={styles.breakdownPct}>{item.percentage}%</Text>
                 </View>
               ))}
             </View>
@@ -374,20 +378,23 @@ export default function MoodTrendsScreen() {
               <Ionicons name="home-outline" size={20} color={AppTheme.colors.textMuted} />
               <Text style={styles.navText}>Home</Text>
             </Pressable>
-            <View style={styles.navItem}>
+            <Pressable
+              onPress={() => router.replace("/(tabs)/checkins")}
+              style={styles.navItem}
+            >
               <Ionicons
-                name="pulse-outline"
+                name="checkmark-circle-outline"
                 size={20}
-                color={AppTheme.colors.accentPrimary}
+                color={AppTheme.colors.textMuted}
               />
-              <Text style={styles.navTextActive}>Trends</Text>
-            </View>
+              <Text style={styles.navText}>Check-in</Text>
+            </Pressable>
             <Pressable
               onPress={() => router.replace("/(tabs)/profile")}
               style={styles.navItem}
             >
-              <Ionicons name="person-outline" size={20} color={AppTheme.colors.textMuted} />
-              <Text style={styles.navText}>Profile</Text>
+              <Ionicons name="person" size={20} color={AppTheme.colors.accentPrimary} />
+              <Text style={styles.navTextActive}>Profile</Text>
             </Pressable>
           </View>
         </View>
@@ -406,8 +413,8 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: 8,
-    paddingBottom: 140,
-    gap: 12,
+    paddingBottom: 120,
+    gap: 22,
   },
   statusRow: {
     flexDirection: "row",
@@ -426,78 +433,110 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   backBtn: {
-    alignSelf: "flex-start",
-    borderRadius: 16,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    alignSelf: "center",
+    marginRight: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(122,143,166,0.28)",
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(19, 41, 76, 0.55)",
+    justifyContent: "center",
+    backgroundColor: "transparent",
   },
-  backBtnText: {
-    color: AppTheme.colors.textMuted,
-    fontFamily: AppTheme.fonts.bodyMedium,
-    fontSize: 12,
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
   },
   title: {
     color: AppTheme.colors.textPrimary,
-    fontFamily: AppTheme.fonts.serifDisplay,
-    fontSize: 47,
-    lineHeight: 52,
+    fontFamily: AppTheme.fonts.bodyMedium,
+    fontSize: 32,
+    lineHeight: 36,
   },
   subtitle: {
-    marginTop: -7,
+    marginTop: -14,
     color: AppTheme.colors.textMuted,
     fontFamily: AppTheme.fonts.bodyRegular,
-    fontSize: 14,
+    fontSize: 12,
+  },
+  headerDivider: {
+    height: 1,
+    backgroundColor: "rgba(122,143,166,0.2)",
+    marginTop: -8,
   },
   segmentWrap: {
-    marginTop: 4,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: "rgba(103, 136, 182, 0.24)",
-    backgroundColor: "rgba(20, 46, 88, 0.85)",
+    marginTop: -4,
+    borderRadius: 16,
+    backgroundColor: "rgba(14, 32, 60, 0.9)",
     flexDirection: "row",
     padding: 4,
-    gap: 4,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+    height: 46,
+    marginHorizontal: 0,
+    width: "100%",
+    alignItems: "center",
   },
   segmentBtn: {
     flex: 1,
-    borderRadius: 11,
+    minWidth: 0,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
-    height: 34,
+    height: 40,
+  },
+  segmentPressed: {
+    opacity: 0.75,
   },
   segmentBtnActive: {
-    backgroundColor: "rgba(86, 194, 174, 0.26)",
+    backgroundColor: "rgba(59, 184, 154, 0.15)",
     borderWidth: 1,
-    borderColor: "rgba(86, 194, 174, 0.45)",
+    borderColor: "rgba(59, 184, 154, 0.45)",
+  },
+  segmentLabelWrap: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  segmentLabelWrapActive: {
+    backgroundColor: "rgba(59,184,154,0.08)",
   },
   segmentText: {
-    color: AppTheme.colors.textMuted,
-    fontFamily: AppTheme.fonts.bodyBold,
+    color: "#3D5A7A",
+    fontFamily: AppTheme.fonts.bodyRegular,
     fontSize: 13,
   },
   segmentTextActive: {
-    color: AppTheme.colors.accentPrimary,
+    color: "#3BB89A",
+    fontFamily: AppTheme.fonts.bodyBold,
   },
   summaryRow: {
     flexDirection: "row",
-    gap: 10,
-  },
-  summaryCard: {
-    flex: 1,
+    alignItems: "stretch",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(94, 131, 177, 0.2)",
-    backgroundColor: "rgba(19, 43, 79, 0.88)",
+    borderColor: "rgba(122,143,166,0.2)",
+    backgroundColor: "rgba(19,43,79,0.55)",
+    paddingVertical: 16,
+  },
+  summaryTile: {
+    flex: 1,
     alignItems: "center",
-    paddingVertical: 14,
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  summaryDivider: {
+    width: 1,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    marginVertical: 4,
   },
   summaryEmoji: {
-    fontSize: 21,
-    marginBottom: 4,
+    fontSize: 28,
+    marginBottom: 5,
   },
   summaryMain: {
     color: AppTheme.colors.textPrimary,
@@ -508,7 +547,7 @@ const styles = StyleSheet.create({
     color: AppTheme.colors.textMuted,
     fontFamily: AppTheme.fonts.bodyRegular,
     fontSize: 12,
-    marginTop: 1,
+    marginTop: 2,
   },
   errorText: {
     color: AppTheme.colors.danger,
@@ -516,58 +555,88 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   chartCard: {
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: "rgba(94, 131, 177, 0.2)",
     backgroundColor: "rgba(19, 43, 79, 0.88)",
-    padding: 14,
+    padding: 16,
   },
   chartHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
+    marginBottom: 10,
   },
   chartTitle: {
-    color: AppTheme.colors.textPrimary,
-    fontFamily: AppTheme.fonts.bodyBold,
-    fontSize: 20,
-  },
-  chartMonth: {
-    color: AppTheme.colors.accentPrimary,
+    color: "#7F9DC4",
     fontFamily: AppTheme.fonts.bodyMedium,
-    fontSize: 12,
+    fontSize: 10,
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
   },
-  plainChartWrap: {
-    marginTop: 6,
-    gap: 10,
-  },
-  plainChartRow: {
+  sparkWrap: {
+    marginTop: 2,
+    minHeight: 160,
+    borderRadius: 14,
+    backgroundColor: "rgba(8,26,52,0.35)",
+    borderWidth: 1,
+    borderColor: "rgba(122,143,166,0.12)",
+    paddingHorizontal: 10,
+    paddingTop: 12,
+    paddingBottom: 8,
     flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+    alignItems: "flex-end",
+    justifyContent: "space-between",
   },
-  plainTrack: {
+  sparkMidLine: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    top: "50%",
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  sparkTooltip: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: "#3BB89A",
+    borderWidth: 1,
+    borderColor: "#3BB89A",
+  },
+  sparkTooltipText: {
+    color: "#FFFFFF",
+    fontFamily: AppTheme.fonts.bodyBold,
+    fontSize: 11,
+  },
+  sparkCol: {
     flex: 1,
-    height: 7,
-    borderRadius: AppTheme.radius.pill,
-    backgroundColor: "rgba(130, 159, 191, 0.22)",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 7,
+  },
+  sparkTrack: {
+    width: 20,
+    height: 110,
+    borderRadius: 999,
+    backgroundColor: "rgba(130, 159, 191, 0.16)",
+    justifyContent: "flex-end",
     overflow: "hidden",
   },
-  plainFill: {
-    height: "100%",
+  sparkBar: {
+    width: "100%",
     borderRadius: AppTheme.radius.pill,
     backgroundColor: "#63d8c1",
   },
-  plainFillLast: {
+  sparkBarLast: {
     backgroundColor: "#D7B686",
   },
-  plainValue: {
-    width: 28,
-    textAlign: "right",
-    color: "#9eb4d2",
+  chartMonthCentered: {
+    marginTop: 10,
+    textAlign: "center",
+    color: "#B8C5D6",
     fontFamily: AppTheme.fonts.bodyMedium,
-    fontSize: 11,
+    fontSize: 13,
   },
   chartLabelText: {
     color: "#7f9dc4",
@@ -585,27 +654,29 @@ const styles = StyleSheet.create({
     paddingVertical: 28,
   },
   breakdownCard: {
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: "rgba(94, 131, 177, 0.2)",
     backgroundColor: "rgba(19, 43, 79, 0.88)",
-    padding: 14,
-    gap: 11,
+    padding: 16,
+    gap: 18,
+    paddingBottom: 22,
   },
   breakdownRow: {
-    flexDirection: "row",
-    alignItems: "center",
     gap: 8,
   },
+  breakdownTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   breakdownLabel: {
-    width: 88,
     color: AppTheme.colors.textPrimary,
     fontFamily: AppTheme.fonts.bodyMedium,
-    fontSize: 15,
+    fontSize: 16,
   },
   track: {
-    flex: 1,
-    height: 6,
+    height: 8,
     borderRadius: AppTheme.radius.pill,
     backgroundColor: "rgba(130, 159, 191, 0.22)",
     overflow: "hidden",
@@ -615,16 +686,18 @@ const styles = StyleSheet.create({
     borderRadius: AppTheme.radius.pill,
   },
   breakdownPct: {
-    width: 36,
     textAlign: "right",
     color: AppTheme.colors.textMuted,
     fontFamily: AppTheme.fonts.bodyMedium,
-    fontSize: 12,
+    fontSize: 13,
   },
   avgText: {
+    marginTop: 2,
+    textAlign: "center",
     color: AppTheme.colors.textMuted,
     fontFamily: AppTheme.fonts.bodyRegular,
     fontSize: 13,
+    textTransform: "none",
   },
   bottomNav: {
     position: "absolute",

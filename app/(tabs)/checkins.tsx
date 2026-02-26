@@ -1,5 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -15,6 +16,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { design, gradients } from "../../constants/design";
 import { useAuth } from "../../contexts/AuthContext";
+import { getProfileCache, setProfileCache } from "../../helper/profileCache";
+import { invalidateUserQueries, userQueryKeys } from "../../helper/queryCache";
 import { supabase } from "../../helper/supabaseClient";
 import { ensureUserProfile } from "../../helper/userProfile";
 
@@ -25,8 +28,50 @@ const MOOD_OPTIONS = [
   { id: "great", label: "Great", value: 4 },
 ];
 
+type CheckinPoint = {
+  date: string;
+  mood: number;
+};
+
+function toDateKey(date: Date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function computeStreak(points: CheckinPoint[]) {
+  if (points.length === 0) return 0;
+  const dateSet = new Set(points.map((point) => point.date.slice(0, 10)));
+  let cursor = new Date();
+  let streak = 0;
+  if (!dateSet.has(toDateKey(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  while (dateSet.has(toDateKey(cursor))) {
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+function buildMoodPreview(points: CheckinPoint[]) {
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const start = toDateKey(sevenDaysAgo);
+  const validMoods = points
+    .filter((point) => point.date >= start)
+    .map((point) => point.mood)
+    .filter((value) => typeof value === "number");
+  if (validMoods.length === 0) return "No recent check-ins";
+  const avg = validMoods.reduce((sum, val) => sum + val, 0) / validMoods.length;
+  const tone = avg < 1.75 ? "Low" : avg < 2.5 ? "Flat" : avg < 3.25 ? "Good" : "Great";
+  return `${tone} avg · ${validMoods.length}/7 days`;
+}
+
 export default function DailyCheckin() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [mood, setMood] = useState("");
   const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -72,10 +117,44 @@ export default function DailyCheckin() {
       return;
     }
 
+    const keys = userQueryKeys(user.id);
+    let previousTrends: CheckinPoint[] | undefined;
+    const previousProfileCache = getProfileCache(user.id);
     setIsSubmitting(true);
     try {
       const today = new Date().toISOString().split("T")[0];
       const moodValue = MOOD_OPTIONS.find((option) => option.id === mood)?.value ?? null;
+      if (!moodValue) {
+        setIsSubmitting(false);
+        Alert.alert("Select a mood", "How are you feeling today?");
+        return;
+      }
+      previousTrends = queryClient.getQueryData<CheckinPoint[]>(keys.moodTrends) ?? [];
+      const hadToday = previousTrends.some((point) => point.date.slice(0, 10) === today);
+      const optimisticTrends = (() => {
+        const next = [...previousTrends];
+        const todayIndex = next.findIndex((point) => point.date.slice(0, 10) === today);
+        if (todayIndex >= 0) {
+          next[todayIndex] = { ...next[todayIndex], mood: moodValue };
+        } else {
+          next.push({ date: today, mood: moodValue });
+        }
+        return next.sort((a, b) => a.date.localeCompare(b.date));
+      })();
+      queryClient.setQueryData<CheckinPoint[]>(keys.moodTrends, optimisticTrends);
+
+      if (previousProfileCache) {
+        setProfileCache({
+          ...previousProfileCache,
+          stats: {
+            ...previousProfileCache.stats,
+            checkins: previousProfileCache.stats.checkins + (hadToday ? 0 : 1),
+            streak: computeStreak(optimisticTrends),
+          },
+          moodPreview: buildMoodPreview(optimisticTrends),
+          loadedAt: Date.now(),
+        });
+      }
 
       if (existingId) {
         const { error } = await supabase
@@ -104,7 +183,14 @@ export default function DailyCheckin() {
       }
 
       setSubmitted(true);
+      await invalidateUserQueries(queryClient, user.id, "none");
     } catch (error) {
+      if (previousTrends) {
+        queryClient.setQueryData<CheckinPoint[]>(keys.moodTrends, previousTrends);
+      }
+      if (previousProfileCache) {
+        setProfileCache(previousProfileCache);
+      }
       console.warn("Failed to save daily check-in:", error);
       Alert.alert("Error", "Could not save your check-in.");
     } finally {

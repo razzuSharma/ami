@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,29 +25,46 @@ import Animated, {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppTheme, gradients } from "../../constants/design";
 import { useAuth } from "../../contexts/AuthContext";
+import {
+  clearProfileCache,
+  getProfileCache,
+  isProfileCacheFresh,
+  setProfileCache,
+} from "../../helper/profileCache";
+import { invalidateUserQueries } from "../../helper/queryCache";
 import { supabase } from "../../helper/supabaseClient";
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { signOut, user } = useAuth();
-  const [stats, setStats] = useState({ streak: 0, checkins: 0, journal: 0 });
-  const [targetStats, setTargetStats] = useState({
-    streak: 0,
-    checkins: 0,
-    journal: 0,
-  });
-  const [profileName, setProfileName] = useState("");
+  const cachedProfile = getProfileCache(user?.id);
+  const [stats, setStats] = useState(
+    cachedProfile?.stats ?? { streak: 0, checkins: 0, journal: 0 },
+  );
+  const [targetStats, setTargetStats] = useState(
+    cachedProfile?.stats ?? {
+      streak: 0,
+      checkins: 0,
+      journal: 0,
+    },
+  );
+  const [profileName, setProfileName] = useState(cachedProfile?.profileName ?? "");
   const [nameInput, setNameInput] = useState("");
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [savingName, setSavingName] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [loadingProfile, setLoadingProfile] = useState(!cachedProfile);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [nameError, setNameError] = useState("");
-  const [journalPreview, setJournalPreview] = useState("No entries yet");
-  const [moodPreview, setMoodPreview] = useState("No recent check-ins");
+  const [journalPreview, setJournalPreview] = useState(
+    cachedProfile?.journalPreview ?? "No entries yet",
+  );
+  const [moodPreview, setMoodPreview] = useState(
+    cachedProfile?.moodPreview ?? "No recent check-ins",
+  );
   const isEditOpenRef = useRef(false);
 
   const displayName = useMemo(() => {
@@ -93,6 +111,7 @@ export default function ProfileScreen() {
   const loadProfileData = useCallback(
     async (asRefresh = false) => {
       if (!user) {
+        clearProfileCache();
         setStats({ streak: 0, checkins: 0, journal: 0 });
         setTargetStats({ streak: 0, checkins: 0, journal: 0 });
         setProfileName("");
@@ -102,6 +121,22 @@ export default function ProfileScreen() {
         setLoadError("");
         setLoadingProfile(false);
         setRefreshing(false);
+        return;
+      }
+
+      const cache = getProfileCache(user.id);
+      if (!asRefresh && cache && isProfileCacheFresh(cache)) {
+        setStats(cache.stats);
+        setTargetStats(cache.stats);
+        setProfileName(cache.profileName);
+        if (!isEditOpenRef.current) {
+          setNameInput(cache.profileName || user.email?.split("@")[0] || "");
+        }
+        setJournalPreview(cache.journalPreview);
+        setMoodPreview(cache.moodPreview);
+        setLoadingProfile(false);
+        setRefreshing(false);
+        setLoadError("");
         return;
       }
 
@@ -178,11 +213,13 @@ export default function ProfileScreen() {
         setLoadError("Some profile data could not be refreshed.");
       }
 
-      setTargetStats({
-        streak: calculateStreak(streakRows?.map((row) => row.date) ?? []),
+      const streak = calculateStreak(streakRows?.map((row) => row.date) ?? []);
+      const nextStats = {
+        streak,
         checkins: checkinsCount ?? 0,
         journal: journalCount ?? 0,
-      });
+      };
+      setTargetStats(nextStats);
 
       const nextName = nameData?.full_name?.trim() || "";
       setProfileName(nextName);
@@ -190,30 +227,34 @@ export default function ProfileScreen() {
         setNameInput(nextName || user.email?.split("@")[0] || "");
       }
 
-      if (lastJournal?.created_at) {
-        const formatted = new Date(lastJournal.created_at).toLocaleDateString(
-          "en-US",
-          {
+      const journalPreviewValue = lastJournal?.created_at
+        ? `Last entry · ${new Date(lastJournal.created_at).toLocaleDateString("en-US", {
             month: "short",
             day: "numeric",
-          },
-        );
-        setJournalPreview(`Last entry · ${formatted}`);
-      } else {
-        setJournalPreview("No entries yet");
-      }
+          })}`
+        : "No entries yet";
+      setJournalPreview(journalPreviewValue);
 
       const validMoods = (weekMoods ?? [])
         .map((row) => row.mood)
         .filter((value): value is number => typeof value === "number");
-      if (validMoods.length === 0) {
-        setMoodPreview("No recent check-ins");
-      } else {
+      const moodPreviewValue = (() => {
+        if (validMoods.length === 0) return "No recent check-ins";
         const avg = validMoods.reduce((sum, val) => sum + val, 0) / validMoods.length;
         const tone =
           avg < 1.75 ? "Low" : avg < 2.5 ? "Flat" : avg < 3.25 ? "Good" : "Great";
-        setMoodPreview(`${tone} avg · ${validMoods.length}/7 days`);
-      }
+        return `${tone} avg · ${validMoods.length}/7 days`;
+      })();
+      setMoodPreview(moodPreviewValue);
+
+      setProfileCache({
+        userId: user.id,
+        profileName: nextName,
+        stats: nextStats,
+        journalPreview: journalPreviewValue,
+        moodPreview: moodPreviewValue,
+        loadedAt: Date.now(),
+      });
 
       setLoadingProfile(false);
       setRefreshing(false);
@@ -261,6 +302,15 @@ export default function ProfileScreen() {
 
     setNameError("");
     setProfileName(trimmed);
+    const existingCache = getProfileCache(user.id);
+    if (existingCache) {
+      setProfileCache({
+        ...existingCache,
+        profileName: trimmed,
+        loadedAt: Date.now(),
+      });
+    }
+    await invalidateUserQueries(queryClient, user.id, "none");
     setIsEditOpen(false);
   };
 
@@ -268,6 +318,7 @@ export default function ProfileScreen() {
     setSigningOut(true);
     try {
       await signOut();
+      clearProfileCache();
       setIsLogoutConfirmOpen(false);
       router.replace("/(auth)/welcome");
     } catch (error) {
@@ -431,31 +482,31 @@ export default function ProfileScreen() {
           onRequestClose={() => setIsLogoutConfirmOpen(false)}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Log Out</Text>
+            <View style={styles.logoutModalCard}>
+              <Text style={styles.logoutModalTitle}>Log Out</Text>
               <Text style={styles.logoutConfirmText}>
                 Are you sure you want to log out?
               </Text>
-              <View style={styles.modalActions}>
+              <View style={styles.logoutActions}>
                 <Pressable
                   onPress={() => setIsLogoutConfirmOpen(false)}
                   style={({ pressed }) => [
-                    styles.modalGhostBtn,
+                    styles.logoutCancelBtn,
                     pressed && styles.pressed,
                   ]}
                   disabled={signingOut}
                 >
-                  <Text style={styles.modalGhostText}>Cancel</Text>
+                  <Text style={styles.logoutCancelText}>Cancel</Text>
                 </Pressable>
                 <Pressable
                   onPress={handleLogout}
                   style={({ pressed }) => [
-                    styles.modalDangerBtn,
+                    styles.logoutPrimaryBtn,
                     pressed && styles.pressed,
                   ]}
                   disabled={signingOut}
                 >
-                  <Text style={styles.modalDangerText}>
+                  <Text style={styles.logoutPrimaryText}>
                     {signingOut ? "Logging out..." : "Log Out"}
                   </Text>
                 </Pressable>
@@ -866,7 +917,7 @@ const styles = StyleSheet.create({
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: "rgba(0,0,0,0.3)",
     justifyContent: "center",
     paddingHorizontal: AppTheme.space.xl,
   },
@@ -931,20 +982,66 @@ const styles = StyleSheet.create({
     fontFamily: AppTheme.fonts.bodyBold,
   },
   logoutConfirmText: {
-    color: AppTheme.colors.textMuted,
-    fontFamily: AppTheme.fonts.bodyRegular,
+    color: "#6B7280",
+    fontFamily: AppTheme.fonts.bodyMedium,
     fontSize: 14,
-    marginBottom: 4,
+    lineHeight: 20,
+    marginTop: 2,
+    marginBottom: 8,
   },
-  modalDangerBtn: {
-    borderRadius: AppTheme.radius.md,
-    backgroundColor: AppTheme.colors.danger,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+  logoutModalCard: {
+    borderRadius: 20,
+    backgroundColor: AppTheme.colors.surface,
+    borderWidth: 1,
+    borderColor: AppTheme.colors.surfaceBorder,
+    padding: 28,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
-  modalDangerText: {
-    color: AppTheme.colors.background,
+  logoutModalTitle: {
+    color: "#F5F7FA",
     fontFamily: AppTheme.fonts.bodyBold,
+    fontSize: 18,
+    marginBottom: 6,
+  },
+  logoutActions: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  logoutPrimaryBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "transparent",
+    borderWidth: 1.5,
+    borderColor: "#E5534B",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logoutPrimaryText: {
+    color: "#E5534B",
+    fontFamily: AppTheme.fonts.bodyBold,
+    fontSize: 15,
+  },
+  logoutCancelBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: AppTheme.colors.surfaceBorder,
+  },
+  logoutCancelText: {
+    color: AppTheme.colors.textPrimary,
+    fontFamily: AppTheme.fonts.bodyMedium,
+    fontSize: 15,
   },
   pressed: {
     opacity: 0.88,

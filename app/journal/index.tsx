@@ -1,7 +1,8 @@
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -13,8 +14,10 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AppTheme, gradients } from "../../constants/design";
+import { AppTheme } from "../../constants/design";
 import { useAuth } from "../../contexts/AuthContext";
+import { getProfileCache, setProfileCache } from "../../helper/profileCache";
+import { invalidateUserQueries, userQueryKeys } from "../../helper/queryCache";
 import { supabase } from "../../helper/supabaseClient";
 import { ensureUserProfile } from "../../helper/userProfile";
 
@@ -28,12 +31,7 @@ type Entry = {
   mood: "CALM" | "HAPPY" | "ANXIOUS" | "TIRED";
 };
 
-const moodPalette: Record<Entry["mood"], { accent: string; chip: string }> = {
-  CALM: { accent: "#5BD7C1", chip: "rgba(91,215,193,0.2)" },
-  HAPPY: { accent: "#D8B886", chip: "rgba(216,184,134,0.2)" },
-  ANXIOUS: { accent: "#A98CFF", chip: "rgba(169,140,255,0.2)" },
-  TIRED: { accent: "#F0947A", chip: "rgba(240,148,122,0.2)" },
-};
+type DraftMood = "calm" | "happy" | "anxious" | null;
 
 function inferMood(content: string, id: string): Entry["mood"] {
   const text = content.toLowerCase();
@@ -65,58 +63,52 @@ function monthHeader(dateISO: string) {
 export default function JournalScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [newEntry, setNewEntry] = useState("");
   const [query, setQuery] = useState("");
+  const [selectedMood, setSelectedMood] = useState<DraftMood>(null);
 
-  const loadEntries = useCallback(async () => {
-    if (!user) {
-      setEntries([]);
-      setLoading(false);
-      return;
-    }
+  const entriesQuery = useQuery({
+    queryKey: user?.id ? userQueryKeys(user.id).journalEntries : ["journal-entries", null],
+    enabled: Boolean(user?.id),
+    staleTime: 3 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const { data, error } = await supabase
+        .from("journal_entries")
+        .select("id,content,created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
 
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("journal_entries")
-      .select("id,content,created_at")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+      if (error) {
+        console.warn("Failed to load journal entries:", error.message);
+        throw new Error(error.message);
+      }
 
-    if (error) {
-      console.warn("Failed to load journal entries:", error.message);
-      setEntries([]);
-      setLoading(false);
-      return;
-    }
-
-    const mapped: Entry[] = (data ?? []).map((item) => {
-      const content = item.content ?? "";
-      const details = splitEntry(content);
-      return {
-        id: item.id,
-        title: details.title,
-        preview: details.preview,
-        words: details.words,
-        mood: inferMood(content, item.id),
-        dateISO: item.created_at,
-        dateLabel: new Date(item.created_at).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        }),
-      };
-    });
-
-    setEntries(mapped);
-    setLoading(false);
-  }, [user]);
-
-  useEffect(() => {
-    loadEntries();
-  }, [loadEntries]);
+      const mapped: Entry[] = (data ?? []).map((item) => {
+        const content = item.content ?? "";
+        const details = splitEntry(content);
+        return {
+          id: item.id,
+          title: details.title,
+          preview: details.preview,
+          words: details.words,
+          mood: inferMood(content, item.id),
+          dateISO: item.created_at,
+          dateLabel: new Date(item.created_at).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          }),
+        };
+      });
+      return mapped;
+    },
+  });
+  const entries = entriesQuery.data ?? [];
+  const loading = entriesQuery.isLoading;
 
   const filteredEntries = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -129,32 +121,141 @@ export default function JournalScreen() {
     );
   }, [entries, query]);
 
+  const draftWordCount = useMemo(() => {
+    const compact = newEntry.trim();
+    if (!compact) return 0;
+    return compact.split(/\s+/).filter(Boolean).length;
+  }, [newEntry]);
+
   const addEntry = async () => {
     if (!newEntry.trim() || !user) return;
     await ensureUserProfile(user);
     setSaving(true);
-    const content = newEntry.trim();
-    const title = content.split("\n")[0].slice(0, 80);
 
-    const { error } = await supabase.from("journal_entries").insert({
+    const content = newEntry.trim();
+    const nowIso = new Date().toISOString();
+    const optimisticId = `optimistic-${Date.now()}`;
+    const optimisticMood: Entry["mood"] =
+      selectedMood === "calm"
+        ? "CALM"
+        : selectedMood === "happy"
+          ? "HAPPY"
+          : selectedMood === "anxious"
+            ? "ANXIOUS"
+            : inferMood(content, optimisticId);
+    const optimisticSplit = splitEntry(content);
+    const optimisticEntry: Entry = {
+      id: optimisticId,
+      title: optimisticSplit.title,
+      preview: optimisticSplit.preview,
+      words: optimisticSplit.words,
+      mood: optimisticMood,
+      dateISO: nowIso,
+      dateLabel: new Date(nowIso).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+    };
+    const keys = userQueryKeys(user.id);
+    const previousEntries = queryClient.getQueryData<Entry[]>(keys.journalEntries) ?? [];
+    queryClient.setQueryData<Entry[]>(keys.journalEntries, [optimisticEntry, ...previousEntries]);
+    const previousProfileCache = getProfileCache(user.id);
+    if (previousProfileCache) {
+      setProfileCache({
+        ...previousProfileCache,
+        stats: {
+          ...previousProfileCache.stats,
+          journal: previousProfileCache.stats.journal + 1,
+        },
+        journalPreview: `Last entry · ${new Date(nowIso).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        })}`,
+        loadedAt: Date.now(),
+      });
+    }
+
+    const title = content.split("\n")[0].slice(0, 80);
+    const basePayload = {
       user_id: user.id,
       title: title || null,
       content,
-    });
+    };
+
+    let insertError: { message: string } | null = null;
+    let inserted:
+      | {
+          id: string;
+          content: string | null;
+          created_at: string;
+        }
+      | null = null;
+
+    const moodValue = selectedMood ? selectedMood.toUpperCase() : null;
+    const firstInsert = await supabase
+      .from("journal_entries")
+      .insert({
+        ...basePayload,
+        mood: moodValue,
+      })
+      .select("id,content,created_at")
+      .single();
+
+    if (firstInsert.error) {
+      const retryInsert = await supabase
+        .from("journal_entries")
+        .insert(basePayload)
+        .select("id,content,created_at")
+        .single();
+      insertError = retryInsert.error;
+      inserted = retryInsert.data;
+    } else {
+      inserted = firstInsert.data;
+    }
 
     setSaving(false);
-    if (error) {
-      console.warn("Failed to save journal entry:", error.message);
+
+    if (insertError) {
+      queryClient.setQueryData<Entry[]>(keys.journalEntries, previousEntries);
+      if (previousProfileCache) {
+        setProfileCache(previousProfileCache);
+      }
+      console.warn("Failed to save journal entry:", insertError.message);
       return;
     }
 
+    if (inserted) {
+      const insertedDetails = splitEntry(inserted.content ?? content);
+      const persisted: Entry = {
+        id: inserted.id,
+        title: insertedDetails.title,
+        preview: insertedDetails.preview,
+        words: insertedDetails.words,
+        mood: optimisticMood,
+        dateISO: inserted.created_at,
+        dateLabel: new Date(inserted.created_at).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+      };
+      queryClient.setQueryData<Entry[]>(keys.journalEntries, (current = []) =>
+        current.map((entry) => (entry.id === optimisticId ? persisted : entry)),
+      );
+    }
+
     setNewEntry("");
+    setSelectedMood(null);
     setModalVisible(false);
-    await loadEntries();
+    await invalidateUserQueries(queryClient, user.id, "none");
   };
 
   return (
-    <LinearGradient colors={gradients.appBackground} style={styles.screen}>
+    <View style={styles.root}>
+      <LinearGradient
+        colors={["#0A1628", "#0B1A31", "#0A1628"]}
+        style={StyleSheet.absoluteFill}
+      />
+
       <SafeAreaView style={styles.screen}>
         <View style={styles.container}>
           <ScrollView
@@ -162,236 +263,236 @@ export default function JournalScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            <Pressable
-              onPress={() => {
-                if (router.canGoBack()) {
-                  router.back();
-                  return;
-                }
-                router.replace("/(tabs)/profile");
-              }}
-              style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
-              accessibilityRole="button"
-              accessibilityLabel="Go back to profile"
-            >
-              <Ionicons
-                name="chevron-back"
-                size={16}
-                color={AppTheme.colors.textMuted}
-              />
-              <Text style={styles.backBtnText}>Back to profile</Text>
-            </Pressable>
-
-            <Text style={styles.pageTitle}>Journal</Text>
-            <Text style={styles.entryMeta}>
-              {entries.length} {entries.length === 1 ? "entry" : "entries"}
-            </Text>
+            <View style={styles.titleRow}>
+              <Pressable
+                onPress={() => {
+                  router.replace("/(tabs)/profile");
+                }}
+                style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Go back to profile"
+              >
+                <Ionicons name="chevron-back" size={16} color="#7A8FA6" />
+              </Pressable>
+              <Text style={styles.pageTitle}>Journal</Text>
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>
+                  {entries.length} {entries.length === 1 ? "entry" : "entries"}
+                </Text>
+              </View>
+            </View>
 
             <View style={styles.searchWrap}>
-              <Ionicons
-                name="search"
-                size={16}
-                color={AppTheme.colors.textMuted}
-                style={styles.searchIcon}
-              />
+              <Ionicons name="search" size={16} color="#8B94A3" style={styles.searchIcon} />
               <TextInput
                 value={query}
                 onChangeText={setQuery}
                 placeholder="Search entries..."
-                placeholderTextColor={AppTheme.colors.textMuted}
+                placeholderTextColor="#8B94A3"
                 style={styles.searchInput}
               />
             </View>
 
             {loading ? (
               <View style={styles.loadingWrap}>
-                <ActivityIndicator color={AppTheme.colors.accentPrimary} />
+                <ActivityIndicator color="#5ECFB1" />
               </View>
             ) : filteredEntries.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <Ionicons
-                  name="book-outline"
-                  size={24}
-                  color={AppTheme.colors.accentPrimary}
-                />
-                <Text style={styles.emptyTitle}>No entries found</Text>
-                <Text style={styles.emptyBody}>Try another search or add a new entry.</Text>
+              <View style={styles.emptyWrap}>
+                <Ionicons name="book-outline" size={28} color="#5ECFB1" />
+                <Text style={styles.emptyTitle}>Your journal is empty</Text>
+                <Text style={styles.emptyBody}>Tap + to write your first entry</Text>
               </View>
             ) : (
               <View style={styles.timelineWrap}>
-                <Text style={styles.monthHeading}>
-                  {monthHeader(filteredEntries[0].dateISO)}
-                </Text>
+                <Text style={styles.monthHeading}>{monthHeader(filteredEntries[0].dateISO)}</Text>
 
-                {filteredEntries.map((entry) => {
-                  const moodStyle = moodPalette[entry.mood];
-                  return (
-                    <Pressable
-                      key={entry.id}
-                      style={({ pressed }) => [
-                        styles.entryCard,
-                        { borderLeftColor: moodStyle.accent },
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <View style={styles.entryTopRow}>
-                        <Text style={styles.entryDateText}>{entry.dateLabel}</Text>
-                        <View style={[styles.moodChip, { backgroundColor: moodStyle.chip }]}>
-                          <Text style={[styles.moodChipText, { color: moodStyle.accent }]}>
-                            {entry.mood}
-                          </Text>
-                        </View>
-                      </View>
+                {filteredEntries.map((entry) => (
+                  <Pressable
+                    key={entry.id}
+                    style={({ pressed }) => [styles.entryCard, pressed && styles.pressed]}
+                  >
+                    <View style={styles.entryTopRow}>
+                      <Text style={styles.entryDateText}>{entry.dateLabel}</Text>
+                      <Text style={styles.entryMoodText}>{entry.mood}</Text>
+                    </View>
 
-                      <Text style={styles.entryTitle}>{entry.title}</Text>
-                      <Text style={styles.entryPreview}>{entry.preview}</Text>
+                    <Text style={styles.entryTitle}>{entry.title}</Text>
+                    <Text style={styles.entryPreview}>{entry.preview}</Text>
 
-                      <View style={styles.entryFooter}>
-                        <Text style={styles.entryWords}>{entry.words} words</Text>
-                        <Ionicons
-                          name="chevron-forward"
-                          size={16}
-                          color={AppTheme.colors.textMuted}
-                        />
-                      </View>
-                    </Pressable>
-                  );
-                })}
+                    <View style={styles.entryDivider} />
+
+                    <View style={styles.entryFooter}>
+                      <Text style={styles.entryWords}>{entry.words} words</Text>
+                      <Ionicons name="chevron-forward" size={16} color="#8B94A3" />
+                    </View>
+                  </Pressable>
+                ))}
               </View>
             )}
           </ScrollView>
+        </View>
 
-          <Pressable
-            onPress={() => setModalVisible(true)}
-            style={({ pressed }) => [styles.fab, pressed && styles.pressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Create new journal entry"
-          >
-            <Ionicons name="add" size={28} color={AppTheme.colors.background} />
+        <View style={styles.bottomNav}>
+          <Pressable onPress={() => router.replace("/(tabs)")} style={styles.navItem}>
+            <Ionicons name="home-outline" size={20} color="#6B7280" />
+            <Text style={styles.navText}>Home</Text>
+          </Pressable>
+          <Pressable onPress={() => router.replace("/(tabs)/checkins")} style={styles.navItem}>
+            <MaterialIcons name="check-circle-outline" size={20} color="#6B7280" />
+            <Text style={styles.navText}>Check-in</Text>
+          </Pressable>
+          <Pressable onPress={() => router.replace("/(tabs)/profile")} style={styles.navItem}>
+            <Ionicons name="person" size={20} color="#5ECFB1" />
+            <Text style={styles.navTextActive}>Profile</Text>
           </Pressable>
 
-          <View style={styles.bottomNav}>
+          <View style={styles.fabShell}>
             <Pressable
-              onPress={() => router.replace("/(tabs)")}
-              style={styles.navItem}
+              onPress={() => setModalVisible(true)}
+              style={styles.fabButton}
+              android_ripple={{ color: "rgba(28,28,30,0.1)", borderless: false }}
+              accessibilityRole="button"
+              accessibilityLabel="Create new journal entry"
             >
-              <Ionicons name="home-outline" size={20} color={AppTheme.colors.textMuted} />
-              <Text style={styles.navText}>Home</Text>
+              <Ionicons name="add" size={24} color="#0A1628" />
             </Pressable>
-            <Pressable
-              onPress={() => router.replace("/(tabs)/checkins")}
-              style={styles.navItem}
-            >
-              <MaterialIcons
-                name="check-circle-outline"
-                size={20}
-                color={AppTheme.colors.textMuted}
-              />
-              <Text style={styles.navText}>Check-in</Text>
-            </Pressable>
-            <View style={styles.navItem}>
-              <Ionicons name="book" size={20} color={AppTheme.colors.accentPrimary} />
-              <Text style={styles.navTextActive}>Journal</Text>
-            </View>
           </View>
         </View>
 
         <Modal
           visible={modalVisible}
           animationType="slide"
-          transparent
-          onRequestClose={() => setModalVisible(false)}
+          transparent={false}
+          onRequestClose={() => {
+            setModalVisible(false);
+            setSelectedMood(null);
+          }}
         >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>New entry</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="What are you feeling today?"
-                placeholderTextColor={AppTheme.colors.textMuted}
-                value={newEntry}
-                onChangeText={setNewEntry}
-                multiline
-                textAlignVertical="top"
-              />
-              <View style={styles.modalActions}>
-                <Pressable
-                  onPress={() => setModalVisible(false)}
-                  style={({ pressed }) => [styles.cancelButton, pressed && styles.pressed]}
-                  disabled={saving}
-                >
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  onPress={addEntry}
-                  style={({ pressed }) => [styles.saveButton, pressed && styles.pressed]}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator color={AppTheme.colors.textPrimary} />
-                  ) : (
-                    <Text style={styles.saveText}>Save</Text>
-                  )}
-                </Pressable>
-              </View>
+          <SafeAreaView style={styles.editorScreen}>
+            <View style={styles.editorHeader}>
+              <Pressable
+                onPress={() => {
+                  setModalVisible(false);
+                  setSelectedMood(null);
+                }}
+                style={({ pressed }) => [styles.editorCloseBtn, pressed && styles.pressed]}
+                accessibilityLabel="Close editor"
+              >
+                <Ionicons name="close" size={20} color="#F0EDE8" />
+              </Pressable>
+
+              <Pressable
+                onPress={addEntry}
+              style={({ pressed }) => [
+                  styles.editorSaveBtn,
+                  (!newEntry.trim() || saving) && styles.editorSaveBtnDisabled,
+                  pressed && styles.pressed,
+                ]}
+                disabled={!newEntry.trim() || saving}
+                accessibilityLabel="Save entry"
+              >
+                <Text style={styles.editorSaveText}>{saving ? "Saving..." : "Save"}</Text>
+              </Pressable>
             </View>
-          </View>
+
+            <TextInput
+              style={styles.editorInput}
+              placeholder="What's on your mind?"
+              placeholderTextColor="#8B94A3"
+              value={newEntry}
+              onChangeText={setNewEntry}
+              multiline
+              textAlignVertical="top"
+              autoFocus
+            />
+
+            <View style={styles.editorBottomRow}>
+              <Text style={styles.editorWordCount}>{draftWordCount} words</Text>
+            </View>
+
+            <View style={styles.moodRow}>
+              <Pressable
+                onPress={() => setSelectedMood("calm")}
+                style={[styles.moodBtn, selectedMood === "calm" && styles.moodBtnActive]}
+              >
+                <Text style={styles.moodBtnText}>😌 Calm</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setSelectedMood("happy")}
+                style={[styles.moodBtn, selectedMood === "happy" && styles.moodBtnActive]}
+              >
+                <Text style={styles.moodBtnText}>😊 Happy</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setSelectedMood("anxious")}
+                style={[styles.moodBtn, selectedMood === "anxious" && styles.moodBtnActive]}
+              >
+                <Text style={styles.moodBtnText}>😓 Anxious</Text>
+              </Pressable>
+            </View>
+          </SafeAreaView>
         </Modal>
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   screen: {
     flex: 1,
   },
   container: {
     flex: 1,
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
   },
   content: {
-    paddingTop: 10,
-    paddingBottom: 140,
-    gap: 14,
+    paddingTop: 14,
+    paddingBottom: 170,
+    gap: 22,
   },
   backBtn: {
-    alignSelf: "flex-start",
+    alignSelf: "center",
+    marginRight: 2,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(103, 136, 182, 0.22)",
-    paddingHorizontal: 11,
-    paddingVertical: 7,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    backgroundColor: "rgba(14, 35, 66, 0.7)",
+    justifyContent: "center",
+    backgroundColor: "rgba(122,143,166,0.12)",
   },
-  backBtnText: {
-    color: AppTheme.colors.textMuted,
-    fontFamily: AppTheme.fonts.bodyMedium,
-    fontSize: 11,
-    letterSpacing: 0.2,
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: -2,
   },
   pageTitle: {
-    color: AppTheme.colors.textPrimary,
+    color: "#F0EDE8",
     fontFamily: AppTheme.fonts.serifDisplay,
-    fontSize: 56,
-    lineHeight: 58,
+    fontSize: 36,
+    lineHeight: 40,
   },
-  entryMeta: {
-    marginTop: -10,
-    color: AppTheme.colors.textMuted,
-    fontFamily: AppTheme.fonts.bodyRegular,
-    fontSize: 14,
+  countBadge: {
+    borderRadius: 999,
+    backgroundColor: "rgba(122,143,166,0.2)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  countBadgeText: {
+    color: "#B8C5D6",
+    fontFamily: AppTheme.fonts.bodyMedium,
+    fontSize: 12,
   },
   searchWrap: {
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: "rgba(103, 136, 182, 0.3)",
-    backgroundColor: "rgba(20, 46, 88, 0.75)",
-    paddingHorizontal: 13,
-    height: 52,
+    borderRadius: 15,
+    backgroundColor: "rgba(20,46,88,0.75)",
+    paddingHorizontal: 14,
+    height: 50,
     flexDirection: "row",
     alignItems: "center",
   },
@@ -400,76 +501,48 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    color: AppTheme.colors.textPrimary,
+    color: "#F0EDE8",
     fontFamily: AppTheme.fonts.bodyRegular,
     fontSize: 14,
   },
-  fab: {
-    position: "absolute",
-    right: 14,
-    bottom: 88,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  loadingWrap: {
+    marginTop: 28,
+    alignItems: "center",
+  },
+  emptyWrap: {
+    marginTop: 90,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: AppTheme.colors.accentPrimary,
-    borderWidth: 1,
-    borderColor: "rgba(94, 207, 177, 0.5)",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 5,
-  },
-  loadingWrap: {
-    marginTop: 20,
-    alignItems: "center",
-  },
-  emptyCard: {
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: "rgba(111, 159, 214, 0.24)",
-    backgroundColor: "rgba(18, 39, 72, 0.72)",
-    alignItems: "center",
-    paddingVertical: 36,
-    paddingHorizontal: 22,
-    marginTop: 6,
+    gap: 8,
   },
   emptyTitle: {
-    color: AppTheme.colors.textPrimary,
+    color: "#F0EDE8",
     fontFamily: AppTheme.fonts.bodyBold,
-    marginTop: 10,
-    fontSize: 28,
+    fontSize: 26,
   },
   emptyBody: {
-    color: AppTheme.colors.textMuted,
+    color: "#7A8FA6",
     fontFamily: AppTheme.fonts.bodyRegular,
-    marginTop: 6,
-    fontSize: 13,
-    textAlign: "center",
-    maxWidth: 240,
+    fontSize: 14,
   },
   timelineWrap: {
-    gap: 12,
+    gap: 14,
   },
   monthHeading: {
-    color: "#6A84A8",
+    color: "#7A8FA6",
     fontFamily: AppTheme.fonts.bodyBold,
     fontSize: 12,
-    letterSpacing: 1.2,
+    letterSpacing: 1,
     textTransform: "uppercase",
-    marginTop: 4,
   },
   entryCard: {
-    borderRadius: 22,
+    borderRadius: 18,
+    backgroundColor: "rgba(19,43,79,0.9)",
     borderWidth: 1,
-    borderLeftWidth: 3,
-    borderColor: "rgba(94, 131, 177, 0.2)",
-    backgroundColor: "rgba(19, 43, 79, 0.88)",
+    borderColor: "rgba(103,136,182,0.24)",
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 8,
+    paddingVertical: 14,
+    gap: 9,
   },
   entryTopRow: {
     flexDirection: "row",
@@ -477,58 +550,58 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   entryDateText: {
-    color: AppTheme.colors.textMuted,
+    color: "#7A8FA6",
     fontFamily: AppTheme.fonts.bodyMedium,
     fontSize: 12,
   },
-  moodChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  moodChipText: {
+  entryMoodText: {
+    color: "#5ECFB1",
     fontFamily: AppTheme.fonts.bodyBold,
     fontSize: 11,
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
   },
   entryTitle: {
-    color: AppTheme.colors.textPrimary,
+    color: "#F0EDE8",
     fontFamily: AppTheme.fonts.serifDisplay,
-    fontSize: 32,
-    lineHeight: 35,
+    fontSize: 20,
+    lineHeight: 24,
   },
   entryPreview: {
-    color: "#9CB0CB",
+    color: "#AFC0D7",
     fontFamily: AppTheme.fonts.bodyRegular,
-    fontSize: 14,
+    fontSize: 13,
     lineHeight: 21,
   },
+  entryDivider: {
+    height: 1,
+    backgroundColor: "rgba(120,149,186,0.2)",
+  },
   entryFooter: {
-    marginTop: 2,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(120, 149, 186, 0.14)",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
   entryWords: {
-    color: AppTheme.colors.textMuted,
+    color: "#7A8FA6",
     fontFamily: AppTheme.fonts.bodyRegular,
     fontSize: 12,
   },
   bottomNav: {
     position: "absolute",
-    left: 0,
-    right: 0,
+    left: 12,
+    right: 12,
     bottom: 12,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(98, 126, 162, 0.3)",
-    backgroundColor: "rgba(7, 24, 48, 0.96)",
+    borderColor: "rgba(98,126,162,0.3)",
+    backgroundColor: "rgba(7,24,48,0.96)",
     paddingVertical: 12,
     flexDirection: "row",
     justifyContent: "space-around",
+    alignItems: "center",
+    zIndex: 10,
+    elevation: 2,
+    overflow: "visible",
   },
   navItem: {
     alignItems: "center",
@@ -536,14 +609,116 @@ const styles = StyleSheet.create({
     width: 80,
   },
   navText: {
-    color: AppTheme.colors.textMuted,
+    color: "#7A8FA6",
     fontFamily: AppTheme.fonts.bodyRegular,
     fontSize: 11,
   },
   navTextActive: {
-    color: AppTheme.colors.accentPrimary,
+    color: "#5ECFB1",
     fontFamily: AppTheme.fonts.bodyMedium,
     fontSize: 11,
+  },
+  fabShell: {
+    position: "absolute",
+    top: -56,
+    right: 18,
+    borderRadius: 27,
+    borderWidth: 1.5,
+    borderColor: "rgba(94,207,177,0.5)",
+    backgroundColor: "#5ECFB1",
+    shadowColor: "#000",
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 8,
+    overflow: "hidden",
+  },
+  fabButton: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  editorScreen: {
+    flex: 1,
+    backgroundColor: "#0A1628",
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  editorHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  editorCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(122,143,166,0.2)",
+  },
+  editorSaveBtn: {
+    borderRadius: 999,
+    backgroundColor: "#5ECFB1",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  editorSaveBtnDisabled: {
+    opacity: 0.5,
+  },
+  editorSaveText: {
+    color: "#0A1628",
+    fontFamily: AppTheme.fonts.bodyBold,
+    fontSize: 13,
+  },
+  editorInput: {
+    flex: 1,
+    borderRadius: 20,
+    backgroundColor: "rgba(20,46,88,0.72)",
+    color: "#F0EDE8",
+    fontFamily: AppTheme.fonts.bodyRegular,
+    fontSize: 16,
+    lineHeight: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  editorBottomRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+  },
+  editorWordCount: {
+    color: "#7A8FA6",
+    fontFamily: AppTheme.fonts.bodyMedium,
+    fontSize: 12,
+  },
+  moodRow: {
+    marginTop: 12,
+    flexDirection: "row",
+    gap: 8,
+  },
+  moodBtn: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(98,126,162,0.35)",
+    backgroundColor: "rgba(19,43,79,0.9)",
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moodBtnActive: {
+    borderColor: "#5ECFB1",
+    backgroundColor: "rgba(94,207,177,0.18)",
+  },
+  moodBtnText: {
+    color: "#F0EDE8",
+    fontFamily: AppTheme.fonts.bodyMedium,
+    fontSize: 13,
   },
   modalOverlay: {
     flex: 1,
