@@ -1,5 +1,5 @@
 import { Slot, useRouter, useSegments } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useFonts } from "expo-font";
 import { DMSerifDisplay_400Regular } from "@expo-google-fonts/dm-serif-display";
 import {
@@ -8,6 +8,7 @@ import {
   DMSans_700Bold,
 } from "@expo-google-fonts/dm-sans";
 import { PlayfairDisplay_600SemiBold_Italic } from "@expo-google-fonts/playfair-display";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../contexts/AuthContext";
@@ -45,6 +46,19 @@ function RootLayoutNav() {
 }
 
 export default function AppLayout() {
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 2 * 60 * 1000,
+            gcTime: 10 * 60 * 1000,
+            refetchOnReconnect: true,
+            refetchOnMount: false,
+          },
+        },
+      }),
+  );
   const [fontsLoaded] = useFonts({
     DMSerifDisplay_400Regular,
     DMSans_400Regular,
@@ -63,9 +77,11 @@ export default function AppLayout() {
 
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <RootLayoutNav />
-      </AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <RootLayoutNav />
+        </AuthProvider>
+      </QueryClientProvider>
     </SafeAreaProvider>
   );
 }

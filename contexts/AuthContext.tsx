@@ -1,6 +1,7 @@
 import { Session, User } from '@supabase/supabase-js';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../helper/supabaseClient';
+import { ensureUserProfile } from '../helper/userProfile';
 
 interface AuthContextType {
   user: User | null;
@@ -41,6 +42,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         .then(({ data: { session } }) => {
           setSession(session);
           setUser(session?.user ?? null);
+          if (session?.user) {
+            ensureUserProfile(session.user);
+          }
           setLoading(false);
         })
         .catch((error) => {
@@ -55,6 +59,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         async (_event, session) => {
           setSession(session);
           setUser(session?.user ?? null);
+          if (session?.user) {
+            ensureUserProfile(session.user);
+          }
           setLoading(false);
         }
       );
@@ -68,14 +75,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const signIn = async (email: string, password: string) => {
     if (!supabase) throw new Error('Authentication not configured');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    await ensureUserProfile(data.user);
   };
 
   const signUp = async (email: string, password: string) => {
     if (!supabase) throw new Error('Authentication not configured');
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
+    await ensureUserProfile(data.user ?? null);
     return { requiresEmailVerification: !data.session };
   };
 
