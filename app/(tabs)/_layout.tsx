@@ -1,14 +1,6 @@
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
-import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from "react-native-reanimated";
 import { AppTheme } from "../../constants/design";
 
 type TabName = "index" | "checkins" | "companion" | "profile";
@@ -42,43 +34,23 @@ function TabIcon({ routeName, focused }: { routeName: TabName; focused: boolean 
   const config = TAB_CONFIG[routeName];
   const iconName = focused || !config.inactiveIcon ? config.activeIcon : config.inactiveIcon;
 
-  const pulse = useSharedValue(0);
-
-  useEffect(() => {
-    if (focused) {
-      pulse.value = withRepeat(
-        withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.ease) }),
-        -1,
-        true
-      );
-      return;
-    }
-    pulse.value = withTiming(0, { duration: 180 });
-  }, [focused, pulse]);
-
-  const glowStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + pulse.value * 0.12 }],
-    opacity: 0.24 + pulse.value * 0.18,
-  }));
-
   return (
-    <View style={styles.iconWrap}>
-      {focused ? <Animated.View style={[styles.activeGlow, glowStyle]} /> : null}
+    <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
       {config.icon === "material" ? (
         <MaterialIcons
           name={iconName as keyof typeof MaterialIcons.glyphMap}
-          size={25}
-          color={focused ? AppTheme.colors.textPrimary : AppTheme.colors.textMuted}
+          size={22}
+          color={focused ? "#F0EDE8" : AppTheme.colors.textMuted}
         />
       ) : (
         <Ionicons
           name={iconName as keyof typeof Ionicons.glyphMap}
-          size={25}
-          color={focused ? AppTheme.colors.textPrimary : AppTheme.colors.textMuted}
+          size={22}
+          color={focused ? "#F0EDE8" : AppTheme.colors.textMuted}
         />
       )}
-      {focused ? <Text style={[styles.iconLabel, styles.iconLabelActive]}>{config.label}</Text> : null}
-      {focused && routeName === "companion" ? <View style={styles.activeUnderline} /> : null}
+      {focused ? <Text style={styles.iconLabel}>{config.label}</Text> : null}
+      {focused ? <View style={styles.activeDot} /> : null}
     </View>
   );
 }
@@ -117,55 +89,49 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     position: "absolute",
-    bottom: 22,
-    left: 16,
-    right: 16,
-    height: 76,
+    bottom: 14,
+    left: 20,
+    right: 20,
+    height: 66,
     borderTopWidth: 0,
     backgroundColor: "transparent",
     elevation: 0,
-    paddingTop: 10,
+    paddingTop: 8,
   },
   tabBackgroundWrap: {
     flex: 1,
-    borderRadius: 22,
+    borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(7,24,48,0.92)",
   },
   tabOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(13,27,42,0.55)",
+    backgroundColor: "rgba(255,255,255,0.015)",
   },
   iconWrap: {
-    width: 74,
-    height: 58,
+    width: 66,
+    height: 46,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    gap: 3,
+    gap: 1,
   },
-  activeGlow: {
-    position: "absolute",
-    width: 48,
-    height: 24,
-    borderRadius: 22,
-    backgroundColor: "rgba(226,176,111,0.32)",
-    bottom: 22,
+  iconWrapActive: {
+    borderWidth: 1,
+    borderColor: "rgba(226,176,111,0.32)",
+    backgroundColor: "rgba(226,176,111,0.11)",
   },
   iconLabel: {
-    marginTop: 1,
-    color: AppTheme.colors.textMuted,
-    fontFamily: AppTheme.fonts.bodyBold,
-    fontSize: 10,
-  },
-  iconLabelActive: {
     color: "#EFD9B8",
+    fontFamily: AppTheme.fonts.bodyMedium,
+    fontSize: 9,
   },
-  activeUnderline: {
+  activeDot: {
     marginTop: 2,
-    width: 28,
-    height: 3,
+    width: 4,
+    height: 4,
     borderRadius: 2,
     backgroundColor: "#E2B06F",
   },

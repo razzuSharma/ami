@@ -84,6 +84,54 @@ function uniqueFacts(facts: string[]) {
   }).filter(Boolean);
 }
 
+function parseReminderPayloadFromText(message: string) {
+  const text = message.trim().replace(/\s+/g, " ");
+  if (!text) return null;
+
+  const afterPattern =
+    /\b(?:remind me|set (?:a )?reminder|add (?:a )?reminder)\b(?:\s+(?:to|about))?\s+(.+?)\s+\b(?:in|after|at|on|tomorrow|tonight|this evening|this morning|next)\b\s*(.+)$/i;
+  const beforePattern =
+    /\b(?:remind me|set (?:a )?reminder|add (?:a )?reminder)\b\s+\b(?:in|after|at|on|tomorrow|tonight|this evening|this morning|next)\b\s*(.+?)\s+\b(?:to|about)\s+(.+)$/i;
+
+  const afterMatch = text.match(afterPattern);
+  if (afterMatch) {
+    return {
+      title: afterMatch[1].trim(),
+      whenText: `${afterMatch[2].trim()}`.trim(),
+    };
+  }
+
+  const beforeMatch = text.match(beforePattern);
+  if (beforeMatch) {
+    return {
+      title: beforeMatch[2].trim(),
+      whenText: beforeMatch[1].trim(),
+    };
+  }
+
+  const looseToMatch = text.match(
+    /\b(?:remind me|set (?:a )?reminder|add (?:a )?reminder)\b(?:\s+(?:to|about))?\s+(.+)$/i,
+  );
+  const rawRemainder = looseToMatch?.[1]?.trim();
+  if (!rawRemainder) return null;
+
+  const whenHintMatch = rawRemainder.match(
+    /\b(in|after|at|on|tomorrow|tonight|this evening|this morning|next)\b\s+(.+)$/i,
+  );
+  if (!whenHintMatch) {
+    return { title: rawRemainder, whenText: undefined };
+  }
+
+  const marker = whenHintMatch[1];
+  const markerIndex = rawRemainder.toLowerCase().lastIndexOf(marker.toLowerCase());
+  const title = rawRemainder.slice(0, markerIndex).trim();
+  const whenText = rawRemainder.slice(markerIndex).trim();
+  return {
+    title: title || "Check in with yourself",
+    whenText: whenText || undefined,
+  };
+}
+
 function detectToolCallFromText(message: string): CompanionToolCall | undefined {
   const text = message.trim();
   if (!text) return undefined;
@@ -104,14 +152,13 @@ function detectToolCallFromText(message: string): CompanionToolCall | undefined 
   }
 
   if (/(?:remind me|set (?:a )?reminder|add (?:a )?reminder)/i.test(text)) {
-    const forMatch = text.match(/(?:to|about)\s+([^,.!?]+)(?:\s+(?:at|on|tomorrow|tonight|in)\b|$)/i);
-    const atMatch = text.match(/\b(?:at|on|tomorrow|tonight|in)\s+(.+)$/i);
+    const parsed = parseReminderPayloadFromText(text);
     return {
       tool: "create_reminder",
       requiresConfirmation: true,
       payload: {
-        title: String(forMatch?.[1] ?? "Check in with yourself").trim(),
-        whenText: String(atMatch?.[1] ?? "").trim() || undefined,
+        title: parsed?.title || "Check in with yourself",
+        whenText: parsed?.whenText,
       },
     };
   }

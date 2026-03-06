@@ -1,5 +1,5 @@
 import { Slot, useRouter, useSegments } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Constants from "expo-constants";
 import { useFonts } from "expo-font";
 import { DMSerifDisplay_400Regular } from "@expo-google-fonts/dm-serif-display";
@@ -11,6 +11,7 @@ import {
 import { PlayfairDisplay_600SemiBold_Italic } from "@expo-google-fonts/playfair-display";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppStateProvider } from "../contexts/AppStateContext";
 import { AuthProvider, useAuth } from "../contexts/AuthContext";
@@ -41,23 +42,54 @@ function RootLayoutNav() {
   const { user, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const [onboardingResolved, setOnboardingResolved] = useState(false);
 
   useEffect(() => {
-    if (loading) return;
+    if (!loading) return;
+    setOnboardingResolved(false);
+  }, [loading]);
 
-    const inAuthGroup = segments[0] === "(auth)";
+  useEffect(() => {
+    let active = true;
 
-    if (user && inAuthGroup) {
-      router.replace("/(tabs)");
-      return;
-    }
+    const syncRouting = async () => {
+      if (loading) return;
 
-    if (!user && !inAuthGroup) {
-      router.replace("/(auth)/welcome");
-    }
-  }, [user, loading, segments, router]);
+      const inAuthGroup = segments[0] === "(auth)";
+      const inOnboarding = segments[0] === "onboarding";
 
-  if (loading) {
+      if (!user?.id) {
+        if (!active) return;
+        setOnboardingResolved(true);
+        if (!inAuthGroup) {
+          router.replace("/(auth)/welcome");
+        }
+        return;
+      }
+
+      const completed = await AsyncStorage.getItem(`onboarding-complete:${user.id}`);
+      const requiresOnboarding = completed !== "1";
+
+      if (!active) return;
+      setOnboardingResolved(true);
+
+      if (requiresOnboarding && !inOnboarding) {
+        router.replace("/onboarding");
+        return;
+      }
+
+      if (!requiresOnboarding && (inAuthGroup || inOnboarding)) {
+        router.replace("/(tabs)");
+      }
+    };
+
+    void syncRouting();
+    return () => {
+      active = false;
+    };
+  }, [loading, router, segments, user?.id]);
+
+  if (loading || (user?.id && !onboardingResolved)) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color="#1E3A8A" />

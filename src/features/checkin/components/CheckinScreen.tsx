@@ -298,11 +298,13 @@ export default function DailyCheckin() {
               ) : null}
               {submitted || Boolean(todayQuery.data) ? (
                 <>
-                  <Text style={styles.sectionTitle}>Saved for today</Text>
-                  <Text style={styles.value}>{MOOD_OPTIONS.find((m) => m.id === mood)?.label ?? moodLabelFromValue(todayQuery.data?.mood ?? 3)}</Text>
-                  {(notes.trim() || todayQuery.data?.notes) ? (
-                    <Text style={styles.savedNote}>{notes.trim() || todayQuery.data?.notes}</Text>
-                  ) : null}
+                  <View style={styles.savedSummaryCard}>
+                    <Text style={styles.savedSummaryTitle}>Saved for today</Text>
+                    <Text style={styles.value}>{MOOD_OPTIONS.find((m) => m.id === mood)?.label ?? moodLabelFromValue(todayQuery.data?.mood ?? 3)}</Text>
+                    {(notes.trim() || todayQuery.data?.notes) ? (
+                      <Text style={styles.savedNote}>{notes.trim() || todayQuery.data?.notes}</Text>
+                    ) : null}
+                  </View>
 
                   {loadingSavedState ? (
                     <View style={styles.sectionCard}>
@@ -417,12 +419,22 @@ const styles = StyleSheet.create({
   title: { color: design.colors.textPrimary, fontSize: 30, fontWeight: "700" },
   date: { color: design.colors.textSecondary, fontSize: 14, marginTop: 5, marginBottom: design.space.lg },
   panel: {
-    borderRadius: design.radius.xl,
-    backgroundColor: "rgba(15,32,64,0.78)",
+    gap: 16,
+  },
+  savedSummaryCard: {
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: design.colors.border,
-    padding: design.space.lg,
-    gap: 12,
+    borderColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(12,38,78,0.5)",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  savedSummaryTitle: {
+    color: "rgba(240,237,232,0.9)",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    marginBottom: 6,
   },
   sectionTitle: { color: design.colors.textPrimary, fontSize: 16, fontWeight: "700", marginBottom: 8 },
   moodRow: { gap: 10, marginBottom: 4 },
@@ -463,16 +475,17 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: "#1b140b", fontSize: 16, fontWeight: "700" },
   buttonDisabled: { opacity: 0.55 },
-  value: { color: "#e8c88f", fontWeight: "700", fontSize: 22, marginBottom: 4 },
-  savedNote: { color: design.colors.textSecondary, fontSize: 15, lineHeight: 21 },
-  ghostButton: { backgroundColor: "transparent", borderWidth: 1, borderColor: design.colors.border, marginTop: 6 },
+  value: { color: "#e8c88f", fontWeight: "700", fontSize: 22, marginBottom: 6 },
+  savedNote: { color: design.colors.textSecondary, fontSize: 15, lineHeight: 22 },
+  ghostButton: { backgroundColor: "transparent", borderWidth: 1, borderColor: design.colors.border, marginTop: 2 },
   ghostText: { color: design.colors.textSecondary, fontSize: 15, fontWeight: "700" },
   sectionCard: {
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(255,255,255,0.04)",
-    padding: 12,
+    borderColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(11,34,70,0.46)",
+    padding: 14,
+    gap: 2,
     overflow: "hidden",
   },
   cardTitle: {
@@ -518,7 +531,7 @@ const styles = StyleSheet.create({
   moodStatLabel: { color: design.colors.textPrimary, fontFamily: AppTheme.fonts.bodyBold, fontSize: 13 },
   moodStatSub: { color: design.colors.textSecondary, fontSize: 11, marginTop: 2 },
   mutedText: { color: design.colors.textSecondary, fontSize: 12 },
-  promptText: { color: design.colors.textSecondary, fontSize: 13, lineHeight: 20, marginBottom: 10 },
+  promptText: { color: design.colors.textSecondary, fontSize: 13, lineHeight: 20, marginBottom: 12 },
   ctaButton: {
     borderRadius: 10,
     borderWidth: 1,
