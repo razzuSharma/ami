@@ -40,7 +40,7 @@ type Entry = {
   rawContent: string;
   dateISO: string;
   dateLabel: string;
-  words: number;
+  readLabel: string;
   mood: EntryMood;
   aiReflection: string | null;
 };
@@ -68,9 +68,26 @@ function inferMood(content: string, id: string): EntryMood {
 function splitEntry(content: string) {
   const compact = content.replace(/\s+/g, " ").trim();
   const title = compact.slice(0, 46) || "Untitled entry";
-  const preview = compact.length > 120 ? `${compact.slice(0, 120)}...` : compact;
-  const words = compact ? compact.split(" ").filter(Boolean).length : 0;
-  return { title, preview, words, compact };
+  return { title, compact };
+}
+
+function buildPreview(content: string, title: string, dateISO: string) {
+  if (content && content !== title) {
+    return `${content.slice(0, 60)}${content.length > 60 ? "..." : ""}`;
+  }
+  return `Written ${new Date(dateISO).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  })}`;
+}
+
+function buildReadLabel(content: string) {
+  const wordCount = content.split(" ").filter(Boolean).length;
+  if (wordCount < 10) return "Quick thought";
+  if (wordCount < 50) return "Short entry";
+  if (wordCount < 150) return "Medium entry";
+  return "Long entry";
 }
 
 function monthHeader(dateISO: string) {
@@ -134,9 +151,9 @@ export default function JournalScreen() {
         return {
           id: item.id,
           title: details.title,
-          preview: details.preview,
+          preview: buildPreview(details.compact, details.title, item.created_at),
           rawContent: details.compact,
-          words: details.words,
+          readLabel: buildReadLabel(details.compact),
           mood: inferMood(content, item.id),
           dateISO: item.created_at,
           dateLabel: new Date(item.created_at).toLocaleDateString("en-US", {
@@ -195,9 +212,9 @@ export default function JournalScreen() {
       const optimistic: Entry = {
         id: optimisticId,
         title: details.title,
-        preview: details.preview,
+        preview: buildPreview(details.compact, details.title, new Date().toISOString()),
         rawContent: details.compact,
-        words: details.words,
+        readLabel: buildReadLabel(details.compact),
         mood: selectedMood === "calm" ? "CALM" : selectedMood === "happy" ? "HAPPY" : selectedMood === "anxious" ? "ANXIOUS" : inferMood(newEntry, optimisticId),
         dateISO: new Date().toISOString(),
         dateLabel: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
@@ -214,9 +231,9 @@ export default function JournalScreen() {
       const persisted: Entry = {
         id: inserted.id,
         title: details.title,
-        preview: details.preview,
+        preview: buildPreview(details.compact, details.title, inserted.created_at),
         rawContent: details.compact,
-        words: details.words,
+        readLabel: buildReadLabel(details.compact),
         mood: inferMood(inserted.content ?? "", inserted.id),
         dateISO: inserted.created_at,
         dateLabel: new Date(inserted.created_at).toLocaleDateString("en-US", {
@@ -376,7 +393,7 @@ export default function JournalScreen() {
 
                     <View style={styles.entryDivider} />
                     <View style={styles.entryFooter}>
-                      <Text style={styles.entryWords}>{entry.words} words</Text>
+                      <Text style={styles.entryWords}>{entry.readLabel}</Text>
                       <Ionicons name="chevron-forward" size={16} color="#8B94A3" />
                     </View>
                   </FrostedCard>
@@ -572,7 +589,11 @@ const styles = StyleSheet.create({
   reflectionText: { color: "#D8E2F1", fontFamily: AppTheme.fonts.bodyRegular, fontSize: 14, lineHeight: 22 },
   entryDivider: { height: 1, backgroundColor: "rgba(120,149,186,0.2)" },
   entryFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  entryWords: { color: "#7A8FA6", fontFamily: AppTheme.fonts.bodyRegular, fontSize: 12 },
+  entryWords: {
+    fontSize: 11,
+    color: "rgba(180,195,215,0.45)",
+    fontStyle: "italic",
+  },
   bottomNav: {
     position: "absolute",
     left: 12,
@@ -596,8 +617,8 @@ const styles = StyleSheet.create({
     right: 18,
     borderRadius: 27,
     borderWidth: 1.5,
-    borderColor: "rgba(94,207,177,0.5)",
-    backgroundColor: "#5ECFB1",
+    borderColor: "rgba(200,145,74,0.55)",
+    backgroundColor: "#c8914a",
   },
   fabButton: { width: 54, height: 54, borderRadius: 27, alignItems: "center", justifyContent: "center" },
   editorScreen: { flex: 1, backgroundColor: "#0A1628", paddingHorizontal: 18, paddingTop: 8, paddingBottom: 16 },

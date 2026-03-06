@@ -50,6 +50,7 @@ type JournalPreview = {
 
 type ProfileData = {
   profileName: string;
+  companionName: string;
   email: string;
   streak: number;
   checkins: number;
@@ -183,9 +184,12 @@ export default function ProfileScreen() {
   const { user } = useAuth();
   const { show } = useToast();
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isCompanionEditOpen, setIsCompanionEditOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [companionNameInput, setCompanionNameInput] = useState("");
   const [nameError, setNameError] = useState("");
+  const [companionNameError, setCompanionNameError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
   const profileQuery = useQuery({
@@ -197,6 +201,7 @@ export default function ProfileScreen() {
       if (!user?.id) {
         return {
           profileName: "",
+          companionName: "",
           email: "",
           streak: 0,
           checkins: 0,
@@ -224,6 +229,7 @@ export default function ProfileScreen() {
         { data: moods30Rows },
         { data: moods7Rows },
         memories,
+        companionNameStored,
       ] = await Promise.all([
         supabase.from("users").select("full_name").eq("id", user.id).maybeSingle(),
         supabase.from("daily_checkins").select("id", { count: "exact", head: true }).eq("user_id", user.id),
@@ -233,6 +239,7 @@ export default function ProfileScreen() {
         supabase.from("daily_checkins").select("mood,date").eq("user_id", user.id).gte("date", toDateKey(last30)),
         supabase.from("daily_checkins").select("mood,date").eq("user_id", user.id).gte("date", toDateKey(last7)),
         loadUserContextFacts(user.id, 6),
+        AsyncStorage.getItem(`companion-name:${user.id}`),
       ]);
 
       const streak = calculateStreak((streakRows ?? []).map((row) => row.date));
@@ -274,6 +281,7 @@ export default function ProfileScreen() {
 
       return {
         profileName: nameData?.full_name?.trim() || "",
+        companionName: companionNameStored?.trim() || "Companion",
         email: user.email || "",
         streak,
         checkins: checkinsCount ?? 0,
@@ -309,6 +317,23 @@ export default function ProfileScreen() {
     },
     onError: () => {
       show("Could not update profile name.");
+    },
+  });
+
+  const saveCompanionNameMutation = useMutation({
+    mutationFn: async (name: string) => {
+      if (!user?.id) throw new Error("Missing user");
+      const key = `companion-name:${user.id}`;
+      await AsyncStorage.setItem(key, name);
+    },
+    onSuccess: async () => {
+      setIsCompanionEditOpen(false);
+      if (user?.id) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.profileDashboard(user.id) });
+      }
+    },
+    onError: () => {
+      show("Could not update companion name.");
     },
   });
 
@@ -366,6 +391,25 @@ export default function ProfileScreen() {
       return;
     }
     saveNameMutation.mutate(trimmed);
+  };
+
+  const handleOpenCompanionEdit = () => {
+    setCompanionNameError("");
+    setCompanionNameInput(profile?.companionName || "Companion");
+    setIsCompanionEditOpen(true);
+  };
+
+  const handleSaveCompanionName = () => {
+    const trimmed = companionNameInput.trim();
+    if (trimmed.length < 2) {
+      setCompanionNameError("Name must be at least 2 characters.");
+      return;
+    }
+    if (trimmed.length > 24) {
+      setCompanionNameError("Name can be at most 24 characters.");
+      return;
+    }
+    saveCompanionNameMutation.mutate(trimmed);
   };
 
   const handleLogout = async () => {
@@ -532,6 +576,18 @@ export default function ProfileScreen() {
                   ))
                 )}
               </Reanimated.View>
+
+              <Reanimated.View entering={FadeInDown.delay(220).duration(460)} style={styles.sectionCard}>
+                <View style={styles.sectionHead}>
+                  <Text style={styles.sectionTitle}>Companion name</Text>
+                  <Pressable onPress={handleOpenCompanionEdit}>
+                    <Text style={styles.sectionLink}>Edit</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.emptyHistoryText}>
+                  Current name: {profile?.companionName || "Companion"}
+                </Text>
+              </Reanimated.View>
             </>
           )}
 
@@ -578,6 +634,41 @@ export default function ProfileScreen() {
                 </Pressable>
                 <Pressable onPress={handleLogout} style={styles.logoutPrimaryBtn}>
                   <Text style={styles.logoutPrimaryText}>Sign out</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={isCompanionEditOpen} transparent animationType="fade" onRequestClose={() => setIsCompanionEditOpen(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Name your companion</Text>
+              <TextInput
+                style={styles.nameInput}
+                value={companionNameInput}
+                onChangeText={(value) => {
+                  setCompanionNameInput(value);
+                  if (companionNameError) setCompanionNameError("");
+                }}
+                placeholder="Companion name"
+                placeholderTextColor={AppTheme.colors.textMuted}
+              />
+              {companionNameError ? <Text style={styles.nameErrorText}>{companionNameError}</Text> : null}
+              <View style={styles.modalActions}>
+                <Pressable
+                  onPress={() => setIsCompanionEditOpen(false)}
+                  style={styles.modalGhostBtn}
+                  disabled={saveCompanionNameMutation.isPending}
+                >
+                  <Text style={styles.modalGhostText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleSaveCompanionName}
+                  style={[styles.modalSaveBtn, saveCompanionNameMutation.isPending && styles.buttonDisabled]}
+                  disabled={saveCompanionNameMutation.isPending}
+                >
+                  <Text style={styles.modalSaveText}>{saveCompanionNameMutation.isPending ? "Saving..." : "Save"}</Text>
                 </Pressable>
               </View>
             </View>
