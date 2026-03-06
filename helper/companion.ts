@@ -259,11 +259,11 @@ export async function loadConversationMessages(conversationId: string) {
     .select("id,role,content,created_at")
     .eq("conversation_id", conversationId)
     .limit(100)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false });
 
   if (error) throw error;
 
-  return (data ?? []).map((row) => ({
+  return [...(data ?? [])].reverse().map((row) => ({
     id: String(row.id),
     role: row.role as CompanionRole,
     content: String(row.content ?? ""),

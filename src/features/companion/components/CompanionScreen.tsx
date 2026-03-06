@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Linking,
@@ -21,9 +22,12 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import Animated, {
   Easing,
   FadeInDown,
+  SharedValue,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withRepeat,
+  withSequence,
   withTiming,
 } from "react-native-reanimated";
 import { AppTheme } from "../../constants/design";
@@ -62,6 +66,10 @@ type ChatMessage = CompanionMessage & {
 };
 
 const FlashListAny = FlashList as any;
+
+function createMessageId(role: "user" | "assistant") {
+  return `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function parseReminderDate(whenText?: string) {
   if (!whenText) return null;
@@ -158,33 +166,97 @@ const ChatBubble = memo(function ChatBubble({ item, isTyping, isSending, onRetry
         ]}
       >
         {isUser ? (
-          <LinearGradient
-            colors={["#c8914a", "#e2b06f"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.userBubbleFill}
-          >
+          <View style={styles.userBubbleFill}>
+            <LinearGradient
+              colors={["#c8914a", "#e2b06f"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFillObject}
+            />
             <Text style={styles.userBubbleText}>{item.content}</Text>
-          </LinearGradient>
+          </View>
         ) : (
           <Frosted style={styles.assistantBubble}>
             <Text style={styles.assistantBubbleText}>{item.content}</Text>
           </Frosted>
         )}
-
-        {isUser ? (
-          <Text style={styles.deliveryText}>
-            {item.delivery === "sending"
-              ? "sending..."
-              : item.delivery === "failed"
-                ? "failed · tap to retry"
-                : ""}
-          </Text>
-        ) : null}
       </Pressable>
+      <View
+        style={[
+          styles.metaRow,
+          item.role === "user" ? styles.metaRowUser : styles.metaRowAssistant,
+        ]}
+      >
+        <Text style={styles.timestamp}>
+          {new Date(item.createdAt).toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          })}
+        </Text>
+        {isUser ? (
+          item.delivery === "sending" ? (
+            <ActivityIndicator size="small" color="rgba(226,176,111,0.9)" style={styles.statusIcon} />
+          ) : item.delivery === "failed" ? (
+            <Ionicons name="refresh" size={12} color="rgba(232,112,112,0.95)" style={styles.statusIcon} />
+          ) : (
+            <Ionicons name="checkmark-done" size={12} color="rgba(226,176,111,0.9)" style={styles.statusIcon} />
+          )
+        ) : null}
+      </View>
     </Animated.View>
   );
 });
+
+function TypingIndicator() {
+  const dot1 = useSharedValue(0);
+  const dot2 = useSharedValue(0);
+  const dot3 = useSharedValue(0);
+
+  useEffect(() => {
+    const animate = (sv: SharedValue<number>, delay: number) => {
+      sv.value = withDelay(
+        delay,
+        withRepeat(
+          withSequence(
+            withTiming(1, { duration: 400 }),
+            withTiming(0, { duration: 400 }),
+          ),
+          -1,
+        ),
+      );
+    };
+    animate(dot1, 0);
+    animate(dot2, 160);
+    animate(dot3, 320);
+  }, [dot1, dot2, dot3]);
+
+  const dot1Style = useAnimatedStyle(() => ({
+    opacity: 0.4 + dot1.value * 0.6,
+    transform: [{ translateY: -dot1.value * 4 }],
+  }));
+  const dot2Style = useAnimatedStyle(() => ({
+    opacity: 0.4 + dot2.value * 0.6,
+    transform: [{ translateY: -dot2.value * 4 }],
+  }));
+  const dot3Style = useAnimatedStyle(() => ({
+    opacity: 0.4 + dot3.value * 0.6,
+    transform: [{ translateY: -dot3.value * 4 }],
+  }));
+
+  return (
+    <View style={typingStyles.row}>
+      <View style={typingStyles.badge}>
+        <Text style={typingStyles.badgeText}>✦</Text>
+      </View>
+      <View style={typingStyles.bubble}>
+        <Animated.View style={[typingStyles.dot, dot1Style]} />
+        <Animated.View style={[typingStyles.dot, dot2Style]} />
+        <Animated.View style={[typingStyles.dot, dot3Style]} />
+      </View>
+    </View>
+  );
+}
 
 export default function CompanionScreen() {
   const { user } = useAuth();
@@ -266,11 +338,13 @@ export default function CompanionScreen() {
         const stored = await loadConversationMessages(id);
         if (!mounted) return;
         setSyncAvailable(true);
-        setMessages(
-          stored.length
+        setMessages((prev) => {
+          const hasLocalMessages = prev.some((item) => item.id !== STARTER.id);
+          if (hasLocalMessages) return prev;
+          return stored.length
             ? stored.map((item) => ({ ...item, delivery: "sent" }))
-            : [{ ...STARTER, delivery: "sent" }],
-        );
+            : [{ ...STARTER, delivery: "sent" }];
+        });
       } catch (error) {
         console.warn("Companion persistence unavailable. Falling back to local-only mode:", error);
         if (!mounted) return;
@@ -296,9 +370,29 @@ export default function CompanionScreen() {
     setMessages((prev) => prev.map((msg) => (msg.id === messageId ? { ...msg, delivery } : msg)));
   };
 
+  const markMessageDelivered = useCallback((prev: ChatMessage[], messageId: string) => {
+    let foundById = false;
+    const next = prev.map((msg) => {
+      if (msg.id !== messageId) return msg;
+      foundById = true;
+      return { ...msg, delivery: "sent" as const };
+    });
+    if (foundById) return next;
+
+    // Fallback: mark the most recent user message stuck in "sending" as sent.
+    for (let i = next.length - 1; i >= 0; i -= 1) {
+      const current = next[i];
+      if (current.role === "user" && current.delivery === "sending") {
+        next[i] = { ...current, delivery: "sent" as const };
+        break;
+      }
+    }
+    return next;
+  }, []);
+
   const appendAssistantMessage = useCallback(async (content: string) => {
     const assistantMessage: ChatMessage = {
-      id: `assistant-${Date.now()}`,
+      id: createMessageId("assistant"),
       role: "assistant",
       content,
       createdAt: new Date().toISOString(),
@@ -366,7 +460,7 @@ export default function CompanionScreen() {
     setSupportRisk("safe");
 
     const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: createMessageId("user"),
       role: "user",
       content: text,
       createdAt: new Date().toISOString(),
@@ -425,7 +519,7 @@ export default function CompanionScreen() {
       const riskLevel = response.riskLevel ?? (response.isCrisis ? "crisis" : "safe");
 
       const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
+        id: createMessageId("assistant"),
         role: "assistant",
         content: response.text,
         createdAt: new Date().toISOString(),
@@ -433,11 +527,7 @@ export default function CompanionScreen() {
       };
 
       setMessages((prev) => [
-        ...prev.map((msg) =>
-          msg.id === userMessage.id
-            ? { ...msg, delivery: "sent" as const }
-            : msg
-        ),
+        ...markMessageDelivered(prev, userMessage.id),
         assistantMessage,
       ]);
       setSupportRisk(riskLevel);
@@ -473,6 +563,7 @@ export default function CompanionScreen() {
     messages,
     releaseActionLock,
     appendAssistantMessage,
+    markMessageDelivered,
     syncAvailable,
     pendingToolCall,
     executeToolCall,
@@ -572,7 +663,7 @@ export default function CompanionScreen() {
               </Frosted>
             ) : null}
 
-            {isTyping ? <Text style={styles.typing}>Companion is typing...</Text> : null}
+            {isTyping ? <TypingIndicator /> : null}
 
             {supportRisk === "crisis" ? (
               <Frosted style={styles.crisisCard}>
@@ -732,9 +823,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   messageList: {
-    paddingTop: 6,
-    paddingBottom: 14,
-    gap: 12,
+    paddingTop: 8,
+    paddingBottom: 20,
+    paddingHorizontal: 4,
+    gap: 8,
   },
   row: {
     flexDirection: "row",
@@ -742,9 +834,11 @@ const styles = StyleSheet.create({
   },
   rowAssistant: {
     justifyContent: "flex-start",
+    paddingRight: 48,
   },
   rowUser: {
     justifyContent: "flex-end",
+    paddingLeft: 48,
   },
   assistantBadge: {
     width: 22,
@@ -767,48 +861,66 @@ const styles = StyleSheet.create({
     ...shadow,
   },
   assistantBubbleWrap: {
-    borderRadius: 18,
+    borderRadius: 20,
+    borderBottomLeftRadius: 4,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(255,255,255,0.07)",
   },
   assistantBubble: {
-    paddingHorizontal: 13,
-    paddingVertical: 11,
-    backgroundColor: "rgba(255,255,255,0.10)",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   assistantBubbleText: {
-    color: "#eef2f8",
-    fontFamily: Platform.select({ ios: "Lato", android: "sans-serif" }),
+    color: "#e8eef8",
     fontSize: 15,
     lineHeight: 24,
+    fontWeight: "400",
+    letterSpacing: 0.1,
   },
   userBubble: {
     borderRadius: 20,
-    overflow: "hidden",
+    borderBottomRightRadius: 4,
   },
   userBubbleFill: {
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    overflow: "hidden",
+    borderRadius: 20,
+    borderBottomRightRadius: 4,
+    position: "relative",
   },
   userBubbleText: {
-    color: "#2f1f0f",
-    fontFamily: Platform.select({ ios: "Lato", android: "sans-serif-medium" }),
+    color: "#1a0f00",
     fontSize: 15,
-    lineHeight: 24,
+    lineHeight: 23,
+    fontWeight: "500",
   },
   failedBubble: {
     borderWidth: 1,
     borderColor: "rgba(232,112,112,0.88)",
   },
-  deliveryText: {
-    marginTop: 5,
-    marginRight: 8,
-    textAlign: "right",
-    color: "rgba(230,234,241,0.75)",
-    fontFamily: AppTheme.fonts.bodyRegular,
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+    marginHorizontal: 4,
+  },
+  metaRowUser: {
+    alignSelf: "flex-end",
+  },
+  metaRowAssistant: {
+    alignSelf: "flex-start",
+  },
+  timestamp: {
+    color: "rgba(180,195,215,0.55)",
     fontSize: 10,
+    letterSpacing: 0.1,
+  },
+  statusIcon: {
+    marginTop: 1,
   },
   fallbackBanner: {
     flexDirection: "row",
@@ -988,5 +1100,47 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.82,
+  },
+});
+
+const typingStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginBottom: 4,
+    marginLeft: 2,
+  },
+  badge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: {
+    color: "#e7c68a",
+    fontSize: 12,
+  },
+  bubble: {
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 20,
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(255,255,255,0.07)",
+    alignItems: "center",
+  },
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#a0b4c8",
   },
 });
