@@ -6,7 +6,7 @@ export default function Index() {
 
   useEffect(() => {
     // Redirect to welcome screen - auth state logic is handled in _layout.tsx
-    router.replace("/(auth)/welcome" as any);
+    router.replace("/(auth)/welcome");
   }, [router]);
 
   return null;

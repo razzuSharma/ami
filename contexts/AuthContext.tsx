@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { Session, User } from '@supabase/supabase-js';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../helper/supabaseClient';
@@ -30,29 +31,61 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
+    // Get initial session and validate it can be refreshed.
     if (supabase) {
-      supabase.auth
-        .getSession()
-        .then(({ data: { session } }) => {
-          setSession(session);
-          setUser(session?.user ?? null);
-          if (session?.user) {
-            ensureUserProfile(session.user);
+      const init = async () => {
+        try {
+          const { data: { session }, error } = await supabase.auth.getSession();
+
+          if (error || !session) {
+            if (error) {
+              console.warn('[Auth] Failed to restore session:', error.message);
+            }
+            await supabase.auth.signOut();
+            setSession(null);
+            setUser(null);
+            setLoading(false);
+            router.replace("/(auth)/login");
+            return;
+          }
+
+          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError || !refreshed.session) {
+            console.warn(
+              '[Auth] Session expired or invalid, signing out:',
+              refreshError?.message ?? 'missing refreshed session',
+            );
+            await supabase.auth.signOut();
+            setSession(null);
+            setUser(null);
+            setLoading(false);
+            router.replace("/(auth)/login");
+            return;
+          }
+
+          setSession(refreshed.session);
+          setUser(refreshed.session.user ?? null);
+          if (refreshed.session.user) {
+            ensureUserProfile(refreshed.session.user);
           }
           setLoading(false);
-        })
-        .catch((error) => {
-          console.warn('Failed to restore auth session:', error);
+        } catch (initError) {
+          console.warn('Failed to restore auth session:', initError);
+          await supabase.auth.signOut();
           setSession(null);
           setUser(null);
           setLoading(false);
-        });
+          router.replace("/(auth)/login");
+        }
+      };
+
+      init();
 
       // Listen for auth changes
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -71,7 +104,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // If supabase is not configured, allow access without auth
       setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   const signIn = async (email: string, password: string) => {
     if (!supabase) throw new Error('Authentication not configured');

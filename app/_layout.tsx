@@ -1,5 +1,6 @@
 import { Slot, useRouter, useSegments } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import Constants from "expo-constants";
 import { useFonts } from "expo-font";
 import { DMSerifDisplay_400Regular } from "@expo-google-fonts/dm-serif-display";
 import {
@@ -8,11 +9,33 @@ import {
   DMSans_700Bold,
 } from "@expo-google-fonts/dm-sans";
 import { PlayfairDisplay_600SemiBold_Italic } from "@expo-google-fonts/playfair-display";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AppStateProvider } from "../contexts/AppStateContext";
 import { AuthProvider, useAuth } from "../contexts/AuthContext";
+import { ErrorBoundary } from "../src/shared/components/ErrorBoundary";
+import { ToastProvider } from "../src/shared/components/Toast";
+import { queryClient } from "../src/shared/lib/queryClient";
 import "../global.css";
+
+const requiredEnvVars = [
+  "EXPO_PUBLIC_SUPABASE_URL",
+  "EXPO_PUBLIC_SUPABASE_ANON_KEY",
+] as const;
+
+requiredEnvVars.forEach((key) => {
+  if (!process.env[key]) {
+    console.error(`Missing required env var: ${key}`);
+  }
+});
+
+if (!Constants.expoConfig?.extra?.supabaseUrl) {
+  console.error("Missing required config: extra.supabaseUrl");
+}
+if (!Constants.expoConfig?.extra?.supabaseAnonKey) {
+  console.error("Missing required config: extra.supabaseAnonKey");
+}
 
 function RootLayoutNav() {
   const { user, loading } = useAuth();
@@ -46,19 +69,6 @@ function RootLayoutNav() {
 }
 
 export default function AppLayout() {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 2 * 60 * 1000,
-            gcTime: 10 * 60 * 1000,
-            refetchOnReconnect: true,
-            refetchOnMount: false,
-          },
-        },
-      }),
-  );
   const [fontsLoaded] = useFonts({
     DMSerifDisplay_400Regular,
     DMSans_400Regular,
@@ -76,13 +86,19 @@ export default function AppLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <RootLayoutNav />
-        </AuthProvider>
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <AppStateProvider>
+              <AuthProvider>
+                <RootLayoutNav />
+              </AuthProvider>
+            </AppStateProvider>
+          </ToastProvider>
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
 
