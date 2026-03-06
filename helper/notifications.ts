@@ -144,3 +144,49 @@ export async function setupNotificationListener() {
     }
   });
 }
+
+export async function scheduleOneTimeReminder(params: {
+  title: string;
+  body: string;
+  when: Date;
+}) {
+  if (Constants.appOwnership === "expo") {
+    throw new Error("Reminders require a development build, not Expo Go.");
+  }
+
+  const hasPermission = await requestPermissions();
+  if (!hasPermission) {
+    throw new Error("Notification permission not granted.");
+  }
+
+  const notifications = await getNotificationsModule();
+  if (!notifications) {
+    throw new Error("Notifications module unavailable.");
+  }
+
+  const now = Date.now();
+  const whenMs = params.when.getTime();
+  if (whenMs <= now) {
+    throw new Error("Reminder time must be in the future.");
+  }
+  const seconds = Math.max(1, Math.floor((whenMs - now) / 1000));
+
+  const identifier = await notifications.scheduleNotificationAsync({
+    content: {
+      title: params.title,
+      body: params.body,
+      sound: true,
+      priority:
+        Platform.OS === "android"
+          ? notifications.AndroidNotificationPriority.HIGH
+          : undefined,
+    },
+    trigger: {
+      type: notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds,
+      repeats: false,
+    },
+  });
+
+  return { identifier };
+}
